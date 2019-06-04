@@ -3,6 +3,108 @@ This module should be used in acceptance and functional tests, see [levels of te
 This module extends the [Db module](https://codeception.com/docs/modules/Db) adding WordPress-specific configuration parameters and methods.  
 The module provides methods to read, write and update the WordPress database **directly**, without relying on WordPress methods, using WordPress functions or triggering WordPress filters.  
 
+## Backup your content
+This module, like the [Codeception Db](https://codeception.com/docs/modules/Db) one it extends, by default **will load a databse dump in the database it's using.**  
+This means that **the database contents will be replaced by the dump contents** on each run of a suite using the module.  
+You can set the `populate` and `cleanup` parameters to `false` to prevent this default behavior but it's usually not what you need in an automated test.  
+**Make a backup of any database you're using in tests that contains any information you care about before you run any test!**
+
+## Change the databse used depending on whether you're running tests or not
+The chore of having to plug different databases, or backup them, depending on whether you're manually testing the site or automatically testing can be mitigated switching them automatically depending on the browser user agent or request headers.  
+This module was born to be used in acceptance and functional tests (see [levels of testing for more information](./../levels-of-testing.md)) and will often be coupled with modules like the [WPBrowser](WPBrowser.md) one or the [WPWebDriver](WPWebDriver.md) one.  
+Depending on which of the two modules is being used in the suite there are different ways to automate the "database switching".
+
+### Automatically changing database based on the browser user agent
+If you would like to automate the "switching above" below you will find an example setup.  
+Update the test site `wp-config.php` file from this:
+```php
+define( 'DB_NAME', 'wordpress' );
+```
+ to this:
+```php
+<?php
+if ( 
+    // Custom header.
+    isset( $_SERVER['HTTP_X_TESTING'] )
+    // Custom user agent.
+    || ( isset( $_SERVER['HTTP_USER_AGENT'] ) && $_SERVER['HTTP_USER_AGENT'] === 'wp-browser' )
+    // The env var set by the WPClIr or WordPress modules.
+    || getenv( 'WPBROWSER_HOST_REQUEST' )
+) {
+    // Use the test database if the request comes from a test.
+    define( 'DB_NAME', 'wordpress_test' );
+} else {
+    // Else use the default one.
+    define( 'DB_NAME', 'wordpress' );
+}
+```
+
+If you're using the [WPWebDriver](WPWebDriver.md) module set the user agent in the browser, in this example I'm setting the user agent in Chromedriver:
+```yaml
+class_name: AcceptanceTester
+modules:
+    enabled:
+        - \Helper\Acceptance
+        - WPDb
+        - WPWebDriver
+    config:
+        WPDb:
+            dsn: 'mysql:host=%WP_DB_HOST%;dbname=%WP_DB_NAME%'
+            user: %WP_DB_USER%
+            password: %WP_DB_PASSWORD%
+            dump: tests/_data/dump.sql
+            populate: true
+            cleanup: false
+            url: '%WP_URL%'
+            tablePrefix: %WP_TABLE_PREFIX%
+            urlReplacement: true
+        WPWebDriver:
+            url: '%WP_URL%'
+            adminUsername: '%WP_ADMIN_USERNAME%'
+            adminPassword: '%WP_ADMIN_PASSWORD%'
+            adminPath: '%WP_ADMIN_PATH%'
+            browser: chrome
+            host: localhost
+            port: 4444
+            window_size: false
+            wait: 5
+            capabilities:
+                # Used in more recent releases of Selenium.
+                "goog:chromeOptions":
+                    args: ["--no-sandbox", "--headless", "--disable-gpu", "--user-agent=wp-browser"]
+                # Support the old format for back-compatibility purposes. 
+                "chromeOptions":
+                    args: ["--no-sandbox", "--headless", "--disable-gpu", "--user-agent=wp-browser"]
+```
+
+If you're using the [WPBrowser](WPBrowser.md) module send a specific header in the context of test requests: 
+```yaml
+class_name: AcceptanceTester
+modules:
+    enabled:
+        - \Helper\Acceptance
+        - WPDb
+        - WPBrowser
+    config:
+        WPDb:
+              dsn: 'mysql:host=%DB_HOST%;dbname=%WP_DB_NAME%'
+              user: %WP_DB_USER%
+              password: %WP_DB_PASSWORD%
+              dump: 'tests/_data/dump.sql'
+              populate: true
+              cleanup: true
+              reconnect: false
+              url: '%WP_URL%'
+              tablePrefix: 'wp_'
+        WPBrowser:
+              url: '%WP_URL%'
+              adminUsername: 'admin'
+              adminPassword: 'admin'
+              adminPath: '/wp-admin'
+              headers: 
+                X-Testing: 'wp-browser'
+```
+
 ## Configuration
 
 * `dsn` *required* - the database POD DSN connection details; read more [on PHP PDO documentation](https://secure.php.net/manual/en/ref.pdo-mysql.connection.php).
@@ -781,9 +883,9 @@ This will avoid issues where the `WPLoader` module could `exit`, terminating the
 <hr>
 
 <p>Checks that a comment is not in the database. Will look up the &quot;comments&quot; table.</p>
-<pre><code class="language-php">    // Remove one comment from the database.
+<pre><code class="language-php">    // Checks for one comment.
     $I-&gt;dontSeeCommentInDatabase(['comment_ID' =&gt; 23]);
-    // Remove all comments from a user.
+    // Checks for comments from a user.
     $I-&gt;dontSeeCommentInDatabase(['user_id' =&gt; 89]);</code></pre>
 <h4>Parameters</h4>
 <ul>
@@ -963,9 +1065,9 @@ This will avoid issues where the `WPLoader` module could `exit`, terminating the
 
 <p>Check that a user meta value is not in the database.</p>
 <pre><code class="language-php">    // Asserts a user does not have a 'karma' meta assigned.
-    $I-&gt;dontSeeUserInDatabase(['user_id' =&gt; 23, 'meta_key' =&gt; 'karma']);
+    $I-&gt;dontSeeUserMetaInDatabase(['user_id' =&gt; 23, 'meta_key' =&gt; 'karma']);
     // Asserts no user has any 'karma' meta assigned.
-    $I-&gt;dontSeeUserInDatabase(['meta_key' =&gt; 'karma']);</code></pre>
+    $I-&gt;dontSeeUserMetaInDatabase(['meta_key' =&gt; 'karma']);</code></pre>
 <h4>Parameters</h4>
 <ul>
 <li><code>array</code> <strong>$criteria</strong> - An array of search criteria.</li></ul>
@@ -999,10 +1101,7 @@ This will avoid issues where the `WPLoader` module could `exit`, terminating the
 <hr>
 
 <p>Returns all entries matching a criteria from the database.</p>
-<pre><code class="language-php">    // Asserts a user does not exist in the database.
-    $I-&gt;dontSeeUserInDatabase(['user_login' =&gt; 'luca']);
-    // Asserts a user with email and login is not in the database.
-    $books = $I-&gt;grabPrefixedTableNameFor('books');
+<pre><code class="language-php">    $books = $I-&gt;grabPrefixedTableNameFor('books');
     $I-&gt;grabAllFromDatabase($books, 'title', ['genre' =&gt; 'fiction']);</code></pre>
 <h4>Parameters</h4>
 <ul>
@@ -1670,7 +1769,7 @@ This will avoid issues where the `WPLoader` module could `exit`, terminating the
 <hr>
 
 <p>Inserts an option in the database.</p>
-<pre><code class="language-php">    $I-&gt;haveOptionInDatabase('posts_per_page, 23);
+<pre><code class="language-php">    $I-&gt;haveOptionInDatabase('posts_per_page', 23);
     $I-&gt;haveOptionInDatabase('my_plugin_options', ['key_one' =&gt; 'value_one', 'key_two' =&gt; 89]);</code></pre>
 <pre><code>    If the option value is an object or an array then the value will be serialized.</code></pre>
 <h4>Parameters</h4>
@@ -1702,7 +1801,7 @@ This will avoid issues where the `WPLoader` module could `exit`, terminating the
 <pre><code class="language-php">    // Insert a post with random values in the database.
     $randomPostId = $I-&gt;havePostInDatabase();
     // Insert a post with specific values in the database.
-    $I-&gt;dontSeeOptionInDatabase([
+    $I-&gt;havePostInDatabase([
             'post_type' =&gt; 'book',
             'post_title' =&gt; 'Alice in Wonderland',
             'meta_input' =&gt; [
@@ -1851,7 +1950,11 @@ This will avoid issues where the `WPLoader` module could `exit`, terminating the
 
 <p>Inserts a user and its meta in the database.</p>
 <pre><code class="language-php">    $userId = $I-&gt;haveUserInDatabase('luca', 'editor', ['user_email' =&gt; 'luca@example.org']);
-    $subscriberId = $I-&gt;haveUserInDatabase('test');</code></pre>
+    $subscriberId = $I-&gt;haveUserInDatabase('test');
+    $userWithMeta = $I-&gt;haveUserInDatabase('luca', 'editor', [
+        'user_email' =&gt; 'luca@example.org'
+        'meta' =&gt; ['a meta_key' =&gt; 'a_meta_value']
+    ]);</code></pre>
 <pre><code>                           and "usermeta" table.</code></pre>
 <h4>Parameters</h4>
 <ul>
@@ -1934,8 +2037,7 @@ This will avoid issues where the `WPLoader` module could `exit`, terminating the
 <hr>
 
 <p>Checks for a comment in the database. Will look up the &quot;comments&quot; table.</p>
-<pre><code class="language-php">    $I-&gt;dontHaveOptionInDatabase('posts_per_page');
-    $I-&gt;dontSeeOptionInDatabase('posts_per_page');</code></pre>
+<pre><code class="language-php">    $I-&gt;seeCommentInDatabase(['comment_ID' =&gt; 23]);</code></pre>
 <h4>Parameters</h4>
 <ul>
 <li><code>array</code> <strong>$criteria</strong> - An array of search criteria.</li></ul>
@@ -2141,7 +2243,10 @@ This will avoid issues where the `WPLoader` module could `exit`, terminating the
 <hr>
 
 <p>Checks that a user is in the database. The method will check the &quot;users&quot; table.</p>
-<pre><code class="language-php">    $userId = $I-&gt;haveUserInDatabase(['])</code></pre>
+<pre><code class="language-php">    $I-&gt;seeUserInDatabase([
+        "user_email" =&gt; "test@example.org",
+        "user_login" =&gt; "login name"
+    ])</code></pre>
 <h4>Parameters</h4>
 <ul>
 <li><code>array</code> <strong>$criteria</strong> - An array of search criteria.</li></ul>
@@ -2152,10 +2257,7 @@ This will avoid issues where the `WPLoader` module could `exit`, terminating the
 <hr>
 
 <p>Checks for a user meta value in the database.</p>
-<pre><code class="language-php">    // Delete a comment `karma` meta.
-    $I-&gt;dontSeeCommentMetaInDatabase(['user_id' =&gt; 23]);
-    // Checks for a specific user meta.
-    $I-&gt;dontSeeCommentMetaInDatabase(['user_id' =&gt; 23, 'meta_key' =&gt; 'karma']);</code></pre>
+<pre><code class="language-php">    $I-&gt;seeUserMetaInDatabase(['user_id' =&gt; 23, 'meta_key' =&gt; 'karma']);</code></pre>
 <h4>Parameters</h4>
 <ul>
 <li><code>array</code> <strong>$criteria</strong> - An array of search criteria.</li></ul>

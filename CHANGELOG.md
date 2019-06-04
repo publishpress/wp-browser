@@ -4,6 +4,21 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [unreleased] Unreleased
 
+## [2.2.10] 2019-06-03;
+### Added
+- when in debug mode the `WPLoader` module will now display a report about the bootstrapped WordPress installation
+
+### Fixed
+- restored the `Codeception\Test\Unit` class as parent of the `\Codeception\TestCase\WPTestCase`; it was erroneously removed from the inheritance tree in 2.2.7
+
+## [2.2.9] 2019-05-24;
+### Fixed
+- catch unlink errors in the `Symlinker` extension (thanks @halmos)
+- fix `WPTestCase` template generation to scaffold PHPUnit `8.0+` compatible code (thanks @halmos)
+
+### Changed
+- updated the documentation to cover some more frequent questions and issues about WPDb
+
 ## [2.2.8] 2019-05-20;
 ### Changed
 - updated requirement of `codeception/codeception` to include version `3.0`
@@ -875,7 +890,9 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Fixed
 - Reference to ModuleConfigException class in WPLoader class.
 
-[unreleased]: https://github.com/lucatume/wp-browser/compare/2.2.8...HEAD
+[unreleased]: https://github.com/lucatume/wp-browser/compare/2.2.10...HEAD
+[2.2.10]: https://github.com/lucatume/wp-browser/compare/2.2.9...2.2.10:
+[2.2.9]: https://github.com/lucatume/wp-browser/compare/2.2.8...2.2.9:
 [2.2.8]: https://github.com/lucatume/wp-browser/compare/2.2.7...2.2.8:
 [2.2.7]: https://github.com/lucatume/wp-browser/compare/2.2.6...2.2.7:
 [2.2.6]: https://github.com/lucatume/wp-browser/compare/2.2.5...2.2.6:

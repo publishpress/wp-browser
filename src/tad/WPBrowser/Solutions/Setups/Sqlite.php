@@ -12,6 +12,7 @@ namespace tad\WPBrowser\Solutions\Setups;
  *
  * @package tad\WPBrowser\Solutions\Setups
  */
-class Sqlite {
+class Sqlite
+{
 
 }
