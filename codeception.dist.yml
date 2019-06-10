@@ -28,14 +28,6 @@ extensions:
                'tests/_data/themes/dummy': '%WP_ROOT_FOLDER%/wp-content/themes/dummy'
                'tests/_data/plugins/mu-plugin-1': '%WP_ROOT_FOLDER%/wp-content/plugins/mu-plugin-1'
                'tests/_data/plugins/test': '%WP_ROOT_FOLDER%/wp-content/plugins/test'
-coverage:
-    enabled: true
-    include:
-        - src/*
-    exclude:
-        - src/data/*
-        - src/includes/*
-        - src/tad/scripts/*
     commands:
         - "Codeception\\Command\\GenerateWPUnit"
         - "Codeception\\Command\\GenerateWPRestApi"

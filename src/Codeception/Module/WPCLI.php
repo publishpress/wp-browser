@@ -7,7 +7,7 @@ use Codeception\Exception\ModuleException;
 use Codeception\Lib\ModuleContainer;
 use Codeception\Module;
 use tad\WPBrowser\Environment\Executor;
-use WP_CLI\Configurator;
+use tad\WPBrowser\Traits\WithWpCli;
 
 /**
  * Class WPCLI
@@ -18,6 +18,8 @@ use WP_CLI\Configurator;
  */
 class WPCLI extends Module
 {
+    use WithWpCli;
+
     /**
      * @var array {
      * @param string $path The absolute path to the target WordPress installation root folder.
@@ -29,11 +31,6 @@ class WPCLI extends Module
      * @var string
      */
     protected $prettyName = 'WPCLI';
-
-    /**
-     * @var string
-     */
-    protected $wpCliRoot = '';
 
     /**
      * @var string
@@ -114,18 +111,11 @@ class WPCLI extends Module
         $output = [];
         $this->debugSection('command', $command);
         $status = $this->executor->exec($command, $output);
-        $this->debugSection('output', implode("\n", (array)$output));
+        $this->debugSection('output', implode("\n", $output));
 
         $this->evaluateStatus($output, $status);
 
         return $status;
-    }
-
-    protected function initPaths()
-    {
-        if (empty($this->wpCliRoot)) {
-            $this->initWpCliPaths();
-        }
     }
 
     /**
@@ -137,34 +127,30 @@ class WPCLI extends Module
      * @throws \Codeception\Exception\ModuleException If the embedded WPCLI Configurator class file
      *                                                could not be found.
      */
-    protected function initWpCliPaths()
+    protected function initPaths()
     {
+        if (!empty($this->wpCliRootDir)) {
+            return;
+        }
+
         try {
-            $ref = new \ReflectionClass(Configurator::class);
-        } catch (\ReflectionException $e) {
-            throw new ModuleException(__CLASS__, 'could not find the path to embedded WPCLI Configurator class');
+            $this->wpCliRootDir = $this->getWpCliRootDir();
+        } catch (\RuntimeException $e) {
+            throw new ModuleException($this, $e->getMessage());
         }
 
-        $this->wpCliRoot = dirname($ref->getFileName()) . '/../../';
-
-        $wpCliRootRealPath = realpath($this->wpCliRoot);
-
-        if (! empty($wpCliRootRealPath)) {
-            $this->wpCliRoot = $wpCliRootRealPath;
-        }
-
-        if (!is_dir($this->wpCliRoot)) {
+        if (!is_dir($this->wpCliRootDir)) {
             throw new ModuleException(
                 $this,
-                "wp-cli root folder ({$this->wpCliRoot}) does not exist."
+                "wp-cli root folder ({$this->wpCliRootDir}) does not exist."
             );
         }
 
-        $this->debugSection('WPCLI Module', 'wp-cli root path: ' . $this->wpCliRoot);
+        $this->debugSection('WPCLI Module', 'wp-cli root path: ' . $this->wpCliRootDir);
 
-        $this->bootPath = rtrim($this->wpCliRoot, '\\/') . '/php/boot-fs.php';
+        $this->bootPath = $this->getWpCliBootFile();
 
-        if (! file_exists($this->bootPath)) {
+        if (!file_exists($this->bootPath)) {
             throw new ModuleException(
                 $this,
                 'Expected the "boot-fs.php" to  be in "' . $this->bootPath . '" but the file does not exist.'

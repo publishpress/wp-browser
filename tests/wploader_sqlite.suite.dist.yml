@@ -1,0 +1,11 @@
+actor: Wploader_sqliteTester
+modules:
+    enabled:
+        - \Helper\Wploader_sqlite
+        - WPLoader
+    config:
+        WPLoader:
+            wpRootFolder: "%WP_ROOT_FOLDER%"
+            useSqlite: true
+            plugins: ['my-plugin/my-plugin.php']
+            activatePlugins: ['my-plugin/my-plugin.php']

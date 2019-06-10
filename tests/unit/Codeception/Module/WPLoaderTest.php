@@ -8,10 +8,13 @@ use Prophecy\Argument;
 use Symfony\Component\Console\Output\BufferedOutput;
 use tad\Codeception\SnapshotAssertions\SnapshotAssertions;
 use tad\WPBrowser\Adapters\WP;
+use tad\WPBrowser\Environment\Database\Sqlite;
+use tad\WPBrowser\Traits\WordPressInstallations;
 
 class WPLoaderTest extends \Codeception\Test\Unit
 {
     use SnapshotAssertions;
+    use WordPressInstallations;
 
     protected $backupGlobals = false;
     /**
@@ -164,6 +167,26 @@ class WPLoaderTest extends \Codeception\Test\Unit
         $this->assertMatchesStringSnapshot($output->fetch());
     }
 
+    /**
+     * It should allow using SQLite as database backend
+     *
+     * @test
+     */
+    public function should_allow_using_sq_lite_as_database_backend()
+    {
+        $database = new Sqlite();
+        $installation = $this->scaffoldWpInstallation(
+            codecept_output_dir('installations'),
+            'latest',
+            $database
+        );
+        $this->config = [
+            'wpRootFolder' => $installation->getRootDir(),
+            'useSqlite' => $database->getFilePath(),
+        ];
+        $module = $this->make_instance();
+    }
+
     protected function _before()
     {
         $root = vfsStream::setup();
@@ -174,7 +197,7 @@ class WPLoaderTest extends \Codeception\Test\Unit
 
         $this->moduleContainer = $this->prophesize(ModuleContainer::class);
         $this->config = [
-            'wpRootFolder' => $root->url().'/wp',
+            'wpRootFolder' => $root->url() . '/wp',
             'dbName' => 'someDb',
             'dbHost' => 'localhost',
             'dbUser' => 'somePass',
