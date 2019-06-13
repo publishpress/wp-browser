@@ -451,18 +451,28 @@ class WPCLITest extends \Codeception\Test\Unit
     }
 
     /**
-     * It should set the executor timeout to null if set to nullable value
+     * It should set the process timeout to null if set to nullable value
      *
      * @test
      * @dataProvider nullTimeoutValues
      */
-    public function should_set_the_executor_timeout_to_null_if_set_to_nullable_value($timeoutValue)
+    public function should_set_the_process_timeout_to_null_if_set_to_nullable_value($timeoutValue)
     {
         $this->config['timeout'] = $timeoutValue;
-        $this->executor = $this->prophesize(Executor::class);
-        $this->executor->setTimeout(null)->shouldBeCalled();
 
-        $this->make_instance();
+        $cli = $this->make_instance();
+
+        $mockProcess = $this->prophesize(\Symfony\Component\Process\Process::class);
+        $mockProcess->getStatus()->willReturn(0);
+        $mockProcess->getOutput()->willReturn(null);
+        $mockProcess->setTimeout(null)->shouldBeCalled();
+        $mockProcess->run()->shouldBeCalled();
+        $path = escapeshellarg($this->root->url() . '/wp');
+        $command = $cli->buildFullCommand(['post list --format=ids', "--path={$path}"]);
+        $this->process->forCommand($command, $this->root->url() . '/wp')
+            ->willReturn($mockProcess->reveal());
+
+        $cli->cliToArray('post list --format=ids');
     }
 
     /**
