@@ -29,6 +29,12 @@ class Executor
      * @var Process
      */
     protected $process;
+    /**
+     * The last process executed.
+     *
+     * @var Process
+     */
+    protected $lastProcess;
 
     /**
      * Executor constructor.
@@ -78,6 +84,8 @@ class Executor
 
         codecept_debug($process->getOutput());
 
+        $this->lastProcess = $process;
+
         return array($process->getOutput(), $process->getStatus());
     }
 
@@ -123,5 +131,15 @@ class Executor
     public function getProcess()
     {
         return $this->process;
+    }
+
+    /**
+     * Returns the last process launched by the executor.
+     *
+     * @return Process|null The last process launched by the executor.
+     */
+    public function getLastProcess()
+    {
+        return $this->lastProcess;
     }
 }

@@ -11,11 +11,11 @@ use tad\WPBrowser\Environment\Database\WordPressDatabaseInterface;
 use tad\WPBrowser\Environment\Installation;
 
 /**
- * Trait WordPressInstallations
+ * Trait WithWordPressInstallations
  *
  * @package tad\WPBrowser\Traits
  */
-trait WordPressInstallations
+trait WithWordPressInstallations
 {
     use WithFaker;
 

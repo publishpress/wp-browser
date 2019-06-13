@@ -249,7 +249,7 @@ class Installation
         $this->adminPassword = $adminPassword ?: $this->faker->password;
         $this->adminEmail = $adminEmail ?: $this->faker->email;
 
-        $this->executeWpCliCommand([
+        $process = $this->executeWpCliCommand([
             'install',
             $this->wpCliOptions([
                 'path' => $this->rootDir,

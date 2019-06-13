@@ -9,12 +9,12 @@ use Symfony\Component\Console\Output\BufferedOutput;
 use tad\Codeception\SnapshotAssertions\SnapshotAssertions;
 use tad\WPBrowser\Adapters\WP;
 use tad\WPBrowser\Environment\Database\Sqlite;
-use tad\WPBrowser\Traits\WordPressInstallations;
+use tad\WPBrowser\Traits\WithWordPressInstallations;
 
 class WPLoaderTest extends \Codeception\Test\Unit
 {
     use SnapshotAssertions;
-    use WordPressInstallations;
+    use WithWordPressInstallations;
 
     protected $backupGlobals = false;
     /**
