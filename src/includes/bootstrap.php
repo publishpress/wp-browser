@@ -85,6 +85,8 @@ if (!defined('WPCEPT_ISOLATED_INSTALL') || false === WPCEPT_ISOLATED_INSTALL) {
 			'DB_USER' => DB_USER,
 			'DB_PASSWORD' => DB_PASSWORD,
 			'DB_HOST' => DB_HOST,
+			'DB_DIR' => defined('DB_DIR') ? DB_DIR : '',
+			'DB_FILE' => definel('DB_FILE') ? DB_FILE: '',
 			'DB_CHARSET' => DB_CHARSET,
 			'DB_COLLATE' => DB_COLLATE,
 			'WP_TESTS_DOMAIN' => WP_TESTS_DOMAIN,

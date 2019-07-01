@@ -2,6 +2,8 @@
 namespace Codeception\TestCase;
 
 // phpcs:disable
+use Codeception\Test\Unit;
+
 if (!class_exists('WP_UnitTest_Factory')) {
     require_once dirname(dirname(dirname(__FILE__))) . '/includes/factory.php';
 }
@@ -203,6 +205,17 @@ class WPTestCase extends \tad\WPBrowser\Compat\Codeception\Unit
         $this->start_transaction();
         $this->expectDeprecated();
         add_filter('wp_die_handler', array($this, 'get_wp_die_handler'));
+
+        /**
+         * After WordPress has been initialized in the test context initialize the Codeception Unit test case.
+         * Check on what methods `\Codeception\Test\Unit` provides to call the correct one depending on the PHPUnit and
+         * Codeception versions.
+         */
+        if (method_exists(Unit::class, '_setUp')) {
+            Unit::_setup();
+        } elseif (method_exists(Unit::class, 'setUp')) {
+            Unit::setUp();
+        }
     }
 
     public function scan_user_uploads()

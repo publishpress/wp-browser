@@ -310,7 +310,9 @@ class WPLoader extends Module
 
         require_once dirname(dirname(__DIR__)) . '/includes/functions.php';
 
-        if (! empty($this->config['loadOnly'])) {
+        $onlyLoading = ! empty($this->config['loadOnly']);
+
+        if ($onlyLoading) {
             $this->bootstrapWP();
         } else {
             $this->installAndBootstrapInstallation();

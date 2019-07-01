@@ -4,6 +4,14 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [unreleased] Unreleased
 
+## [2.2.15] 2019-06-28;
+### Fixed
+- call `Codeception\Test\Unit` setup methods in `WPTestCase` to provide Codeception Unit testing facilities in "WordPress unit" test cases
+
+## [2.2.14] 2019-06-14;
+### Fixed
+- remove left-over `%WP_URL%` from generated configuration files when runnin `codecept init wpbrowser` and replace it with `%TEST_SITE_WP_URL%` (thanks @HendrikRoehm)
+
 ## [2.2.13] 2019-06-13;
 ### Fixed
 - when the `WPLoader` module is set to `loadOnly` mode and used in conjunction with a `*Db` module delay its load after all other modules ran their `_beforeSuite` action; this tackles an issue only partially resolved in `2.2.8` (thanks @Luc45)
@@ -902,10 +910,12 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Fixed
 - Reference to ModuleConfigException class in WPLoader class.
 
-[unreleased]: https://github.com/lucatume/wp-browser/compare/2.2.13...HEAD
-[2.2.13]: https://github.com/lucatume/wp-browser/compare/2.2.12...2.2.13:
-[2.2.12]: https://github.com/lucatume/wp-browser/compare/2.2.11...2.2.12:
-[2.2.11]: https://github.com/lucatume/wp-browser/compare/2.2.10...2.2.11:
+[unreleased]: https://github.com/lucatume/wp-browser/compare/2.2.15...HEAD
+[2.2.15]: https://github.com/lucatume/wp-browser/compare/2.2.14...2.2.15
+[2.2.14]: https://github.com/lucatume/wp-browser/compare/2.2.13...2.2.14
+[2.2.13]: https://github.com/lucatume/wp-browser/compare/2.2.12...2.2.13
+[2.2.12]: https://github.com/lucatume/wp-browser/compare/2.2.11...2.2.12
+[2.2.11]: https://github.com/lucatume/wp-browser/compare/2.2.10...2.2.11
 [2.2.10]: https://github.com/lucatume/wp-browser/compare/2.2.9...2.2.10
 [2.2.9]: https://github.com/lucatume/wp-browser/compare/2.2.8...2.2.9
 [2.2.8]: https://github.com/lucatume/wp-browser/compare/2.2.7...2.2.8
