@@ -4,7 +4,7 @@
  */
 
 if (!function_exists('tad_functions')) {
-	require_once __DIR__ . '/tad-functions.php';
+    require_once __DIR__ . '/tad-functions.php';
 }
 
 /*
@@ -17,7 +17,7 @@ define('DIR_TESTDATA', __DIR__ . '/../data');
 define('WP_LANG_DIR', DIR_TESTDATA . '/languages');
 
 if (!defined('WP_TESTS_FORCE_KNOWN_BUGS')) {
-	define('WP_TESTS_FORCE_KNOWN_BUGS', false);
+    define('WP_TESTS_FORCE_KNOWN_BUGS', false);
 }
 
 // Cron tries to make an HTTP request to the blog, which always fails, because tests are run in CLI mode only
@@ -26,13 +26,13 @@ define('DISABLE_WP_CRON', true);
 define('REST_TESTS_IMPOSSIBLY_HIGH_NUMBER', 99999999);
 
 $memory_settings = [
-	'WP_MEMORY_LIMIT' => -1,
-	'WP_MAX_MEMORY_LIMIT' => -1,
+    'WP_MEMORY_LIMIT' => -1,
+    'WP_MAX_MEMORY_LIMIT' => -1,
 ];
 foreach ($memory_settings as $memory_setting => $value) {
-	if (!defined($memory_setting)) {
-		define($memory_setting, $value);
-	}
+    if (!defined($memory_setting)) {
+        define($memory_setting, $value);
+    }
 }
 
 $_SERVER['SERVER_PROTOCOL'] = 'HTTP/1.1';
@@ -44,11 +44,11 @@ $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
 $PHP_SELF = $GLOBALS['PHP_SELF'] = $_SERVER['PHP_SELF'] = '/index.php';
 
 if ("1" == getenv('WP_MULTISITE') ||
-	(defined('WP_TESTS_MULTISITE') && WP_TESTS_MULTISITE)
+    (defined('WP_TESTS_MULTISITE') && WP_TESTS_MULTISITE)
 ) {
-	$multisite = true;
+    $multisite = true;
 } else {
-	$multisite = false;
+    $multisite = false;
 }
 
 // Override the PHPMailer
@@ -56,7 +56,7 @@ require_once dirname(__FILE__) . '/mock-mailer.php';
 $phpmailer = new MockPHPMailer();
 
 if (!defined('WP_DEFAULT_THEME')) {
-	define('WP_DEFAULT_THEME', 'default');
+    define('WP_DEFAULT_THEME', 'default');
 }
 
 $wp_theme_directories = array(DIR_TESTDATA . '/themedir1');
@@ -65,77 +65,77 @@ $table_prefix = WP_TESTS_TABLE_PREFIX;
 
 // in place of executing the installation script require the (modified) installation file
 if (!defined('WPCEPT_ISOLATED_INSTALL') || false === WPCEPT_ISOLATED_INSTALL) {
-	codecept_debug('Installing WordPress in same process...');
-	require 'same-scope-install.php';
+    codecept_debug('Installing WordPress in same process...');
+    require 'same-scope-install.php';
 } else {
-	global $wp_tests_options;
-	$wploaderInstallationFilters = empty($wp_tests_options['installation_filters'])
-		? []
-		: $wp_tests_options['installation_filters'];
+    global $wp_tests_options;
+    $wploaderInstallationFilters = empty($wp_tests_options['installation_filters'])
+        ? []
+        : $wp_tests_options['installation_filters'];
 
-	$environment = [
-		'root' => codecept_root_dir(),
-		'autoload' => wpbrowser_vendor_path('autoload.php'),
-		'installationFilters' => $wploaderInstallationFilters,
-		'constants' => [
-			'ABSPATH' => ABSPATH,
-			'WP_DEBUG' => true,
-			'WP_TESTS_TABLE_PREFIX' => WP_TESTS_TABLE_PREFIX,
-			'DB_NAME' => DB_NAME,
-			'DB_USER' => DB_USER,
-			'DB_PASSWORD' => DB_PASSWORD,
-			'DB_HOST' => DB_HOST,
-			'DB_DIR' => defined('DB_DIR') ? DB_DIR : '',
-			'DB_FILE' => definel('DB_FILE') ? DB_FILE: '',
-			'DB_CHARSET' => DB_CHARSET,
-			'DB_COLLATE' => DB_COLLATE,
-			'WP_TESTS_DOMAIN' => WP_TESTS_DOMAIN,
-			'WP_TESTS_EMAIL' => WP_TESTS_EMAIL,
-			'WP_TESTS_TITLE' => WP_TESTS_TITLE,
-			'WP_PHP_BINARY' => WP_PHP_BINARY,
-			'WPLANG' => WPLANG,
-		],
-	];
+    $environment = [
+        'root' => codecept_root_dir(),
+        'autoload' => wpbrowser_vendor_path('autoload.php'),
+        'installationFilters' => $wploaderInstallationFilters,
+        'constants' => [
+            'ABSPATH' => ABSPATH,
+            'WP_DEBUG' => true,
+            'WP_TESTS_TABLE_PREFIX' => WP_TESTS_TABLE_PREFIX,
+            'DB_NAME' => defined('DB_NAME') ? DB_NAME : '',
+            'DB_USER' => defined('DB_USER') ? DB_USER : '',
+            'DB_PASSWORD' => defined('DB_PASSWORD') ? DB_PASSWORD : '',
+            'DB_HOST' => defined('DB_HOST') ? DB_HOST : '',
+            'DB_DIR' => defined('DB_DIR') ? DB_DIR : '',
+            'DB_FILE' => defined('DB_FILE') ? DB_FILE : '',
+            'DB_CHARSET' => defined('DB_CHARSET') ? DB_CHARSET : 'utf8',
+            'DB_COLLATE' => defined('DB_COLLATE') ? DB_COLLATE : '',
+            'WP_TESTS_DOMAIN' => WP_TESTS_DOMAIN,
+            'WP_TESTS_EMAIL' => WP_TESTS_EMAIL,
+            'WP_TESTS_TITLE' => WP_TESTS_TITLE,
+            'WP_PHP_BINARY' => WP_PHP_BINARY,
+            'WPLANG' => WPLANG,
+        ],
+    ];
 
-	$dirConstants = [
-		'WP_PLUGIN_DIR',
-		'WP_CONTENT_DIR',
-		'WP_TEMP_DIR',
-		'WPMU_PLUGIN_DIR',
-		'WP_LANG_DIR',
-	];
-	foreach ($dirConstants as $const) {
-		if (defined($const)) {
-			$environment['constants'][$const] = constant($const);
-		}
-	}
+    $dirConstants = [
+        'WP_PLUGIN_DIR',
+        'WP_CONTENT_DIR',
+        'WP_TEMP_DIR',
+        'WPMU_PLUGIN_DIR',
+        'WP_LANG_DIR',
+    ];
+    foreach ($dirConstants as $const) {
+        if (defined($const)) {
+            $environment['constants'][$const] = constant($const);
+        }
+    }
 
-	if (!empty($GLOBALS['wp_tests_options']['active_plugins'])) {
-		$uniqueActivePlugins = array_unique($GLOBALS['wp_tests_options']['active_plugins']);
-		$environment['activePlugins'] = $uniqueActivePlugins;
-		codecept_debug("Active plugins:\n\t- " . implode("\n\t- ", $uniqueActivePlugins));
-	}
+    if (!empty($GLOBALS['wp_tests_options']['active_plugins'])) {
+        $uniqueActivePlugins = array_unique($GLOBALS['wp_tests_options']['active_plugins']);
+        $environment['activePlugins'] = $uniqueActivePlugins;
+        codecept_debug("Active plugins:\n\t- " . implode("\n\t- ", $uniqueActivePlugins));
+    }
 
-	codecept_debug('Installing WordPress in isolated process...');
-	ob_start();
-	$isolatedInstallationScript = __DIR__ . '/isolated-install.php';
-	system(implode(' ', [
-		WP_PHP_BINARY,
-		escapeshellarg($isolatedInstallationScript),
-		escapeshellarg(base64_encode(serialize($environment))),
-		$multisite,
-	]));
-	codecept_debug("Isolated installation script output: \n\n" . ob_get_clean());
+    codecept_debug('Installing WordPress in isolated process...');
+    ob_start();
+    $isolatedInstallationScript = __DIR__ . '/isolated-install.php';
+    system(implode(' ', [
+        WP_PHP_BINARY,
+        escapeshellarg($isolatedInstallationScript),
+        escapeshellarg(base64_encode(serialize($environment))),
+        $multisite,
+    ]));
+    codecept_debug("Isolated installation script output: \n\n" . ob_get_clean());
 }
 
 if ($multisite) {
-	if (!defined('MULTISITE')) {
-		define('MULTISITE', true);
-	}
-	if (!defined('SUBDOMAIN_INSTALL')) {
-		define('SUBDOMAIN_INSTALL', false);
-	}
-	$GLOBALS['base'] = '/';
+    if (!defined('MULTISITE')) {
+        define('MULTISITE', true);
+    }
+    if (!defined('SUBDOMAIN_INSTALL')) {
+        define('SUBDOMAIN_INSTALL', false);
+    }
+    $GLOBALS['base'] = '/';
 }
 unset($multisite);
 
@@ -148,15 +148,16 @@ tests_add_filter('wp_die_handler', '_wp_die_handler_filter');
 // Preset WordPress options defined in bootstrap file.
 // Used to activate themes, plugins, as well as  other settings.
 if (isset($GLOBALS['wp_tests_options'])) {
-	function wp_tests_options($value) {
-		$key = substr(current_filter(), strlen('pre_option_'));
+    function wp_tests_options($value)
+    {
+        $key = substr(current_filter(), strlen('pre_option_'));
 
-		return $GLOBALS['wp_tests_options'][$key];
-	}
+        return $GLOBALS['wp_tests_options'][$key];
+    }
 
-	foreach (array_keys($GLOBALS['wp_tests_options']) as $key) {
-		tests_add_filter('pre_option_' . $key, 'wp_tests_options');
-	}
+    foreach (array_keys($GLOBALS['wp_tests_options']) as $key) {
+        tests_add_filter('pre_option_' . $key, 'wp_tests_options');
+    }
 }
 
 // Load WordPress: "untrailingslash" ABSPATH first of all to avoid double slashes in filepath,
@@ -176,7 +177,7 @@ include_once __DIR__ . '/utils.php';
 
 // let's make sure we are using a version of WordPress that integrates the WP_REST_Server class
 if (class_exists('WP_REST_Server')) {
-	require __DIR__ . '/spy-rest-server.php';
+    require __DIR__ . '/spy-rest-server.php';
 }
 ob_start();
 codecept_debug(ob_get_clean());

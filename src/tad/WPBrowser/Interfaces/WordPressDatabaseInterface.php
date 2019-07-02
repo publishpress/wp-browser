@@ -5,7 +5,7 @@
  * @package tad\WPBrowser\Environment\Database
  */
 
-namespace tad\WPBrowser\Environment\Database;
+namespace tad\WPBrowser\Interfaces;
 
 use tad\WPBrowser\Environment\Installation;
 
@@ -74,32 +74,11 @@ interface WordPressDatabaseInterface
     public function getExtraPhp();
 
     /**
-     * Sets the installation root directory.
-     *
-     * Some database implementations might need it.
-     *
-     * @param string $wpRootDir The absolute path to the WordPress installation root directory.
-     *
-     * @return WordPressDatabaseInterface The object.
-     */
-    public function setWpRootDir($wpRootDir);
-
-
-    /**
-     * Sets the WordPress installation this database is for.
-     *
-     * @param Installation $installation
-     *
-     * @return WordPressDatabaseInterface The object.
-     */
-    public function setInstallation(Installation $installation);
-
-    /**
      * Creates the database if required.
      *
-     * @return WordPressDatabaseInterface The object.
+     * @return WordPressDatabaseInterface This.
      */
-    public function create();
+    public function createDatabase();
 
     /**
      * Whether the database check should be skipped or not.
@@ -107,4 +86,29 @@ interface WordPressDatabaseInterface
      * @return bool
      */
     public function shouldSkipCheck();
+
+    /**
+     * Sets the installation the database is associated with.
+     *
+     * @param Installation $installation The installation using the database.
+     *
+     * @return WordPressDatabaseInterface This.
+     */
+    public function setInstallation(Installation $installation);
+
+    /**
+     * Resets the installation the database is associated with.
+     */
+    public function resetInstallation();
+
+    /**
+     * Backs-up the database.
+     *
+     * @param string $destination The path to the file the database should be dumped into.
+     *
+     * @return bool Whether the dump was successful or not.
+     *@see WordPressDatabaseInterface::restore()
+     *
+     */
+    public function dumpTo($destination);
 }

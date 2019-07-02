@@ -85,6 +85,13 @@ HTML
     }
 
     /**
+     * If the constant is already defined then bail.
+     */
+    if (defined('FQDB')) {
+        return;
+    }
+
+    /**
      * Notice:
      * Your scripts have the permission to create directories or files on your server.
      * If you write in your wp-config.php like below, we take these definitions.
@@ -1033,7 +1040,7 @@ HTML
          *
          * @var string
          * @access private
-         */
+         *e
         private $query_type;
         /**
          * Class variable to store the result of the query.
@@ -1259,48 +1266,15 @@ HTML
          */
         private function prepare_directory()
         {
-            global $wpdb;
-            $u = umask(0000);
-            if (! is_dir(FQDBDIR)) {
-                if (! @mkdir(FQDBDIR, 0704, true)) {
-                    umask($u);
-                    $message = 'Unable to create the required directory! Please check your server settings.';
-                    wp_die($message, 'Error!');
+            if (!is_dir(FQDBDIR)) {
+                if (!mkdir(FQDBDIR, 0704, true) && !is_dir(FQDBDIR)) {
+                    throw new \RuntimeException('Cannot create SQLite database directory [' . FQDBDIR . ']');
                 }
             }
-            if (! is_writable(FQDBDIR)) {
-                umask($u);
-                $message = 'Unable to create a file in the directory! Please check your server settings.';
-                wp_die($message, 'Error!');
-            }
-            if (! is_file(FQDBDIR . '.htaccess')) {
-                $fh = fopen(FQDBDIR . '.htaccess', "w");
-                if (! $fh) {
-                    umask($u);
-                    $message = 'Unable to create a file in the directory! Please check your server settings.';
-                    echo $message;
-
-                    return false;
-                }
-                fwrite($fh, 'DENY FROM ALL');
-                fclose($fh);
-            }
-            if (! is_file(FQDBDIR . 'index.php')) {
-                $fh = fopen(FQDBDIR . 'index.php', "w");
-                if (! $fh) {
-                    umask($u);
-                    $message = 'Unable to create a file in the directory! Please check your server settings.';
-                    echo $message;
-
-                    return false;
-                }
-                fwrite($fh, '<?php // Silence is gold. ?>');
-                fclose($fh);
-            }
-            umask($u);
 
             return true;
         }
+
 
         /**
          * Method to execute query().
@@ -1850,7 +1824,7 @@ HTML
          */
         private function determine_query_type($query)
         {
-            $result = preg_match('/^\\s*(SET|EXPLAIN|PRAGMA|SELECT\\s*FOUND_ROWS|SELECT|INSERT|UPDATE|REPLACE|DELETE|ALTER|CREATE|DROP\\s*INDEX|DROP|SHOW\\s*\\w+\\s*\\w+\\s*|DESCRIBE|DESC|TRUNCATE|OPTIMIZE|CHECK|ANALYZE)/i',
+            $result = preg_match('/^\\s*(SET|EXPLAIN|PRAGMA|ATTACH|DETACH|SELECT\\s*FOUND_ROWS|SELECT|INSERT|UPDATE|REPLACE|DELETE|ALTER|CREATE|DROP\\s*INDEX|DROP|SHOW\\s*\\w+\\s*\\w+\\s*|DESCRIBE|DESC|TRUNCATE|OPTIMIZE|CHECK|ANALYZE)/i',
                 $query, $match);
 
             if (! $result) {
@@ -2967,6 +2941,8 @@ HTML
                     $this->rewrite_optimize();
                     break;
                 case 'pragma':
+                case 'attach':
+                case 'detach':
                     break;
                 default:
                     if (defined(WP_DEBUG) && WP_DEBUG) {

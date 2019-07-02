@@ -3,7 +3,7 @@
 namespace tad\WPBrowser\Filesystem\FileReplacers;
 
 use Codeception\Exception\ModuleConfigException;
-use tad\WPBrowser\Generators\TemplateProviderInterface;
+use tad\WPBrowser\Interfaces\TemplateProviderInterface;
 
 class AbstractFileReplacer
 {

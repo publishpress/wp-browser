@@ -7,12 +7,12 @@
 
 namespace tad\WPBrowser\Environment;
 
-use Codeception\Util\Template;
-use tad\WPBrowser\Environment\Database\WordPressDatabaseInterface;
+use Symfony\Component\Process\Process;
+use tad\WPBrowser\Exceptions\InstallationException;
+use tad\WPBrowser\Exceptions\WpCliException;
+use tad\WPBrowser\Interfaces\WordPressDatabaseInterface;
 use tad\WPBrowser\Traits\WithFaker;
 use tad\WPBrowser\Traits\WithWpCli;
-use tad\WPBrowser\WPCLI\BufferLogger;
-use WP_CLI\Loggers\Base;
 
 /**
  * Class Installation
@@ -44,12 +44,6 @@ class Installation
      * @var string
      */
     protected $wpVersion;
-    /**
-     * The Core command instance the installation should use to download and install WordPress.
-     *
-     * @var \Core_Command
-     */
-    protected $coreCommand;
 
     /**
      * The installation WordPress locale.
@@ -64,20 +58,6 @@ class Installation
      * @var bool
      */
     protected $skipContent = false;
-
-    /**
-     * The logger used to log wp-cli messages.
-     *
-     * @var Base
-     */
-    protected $wpCliLogger;
-
-    /**
-     * An instance of the wp-cli config command
-     *
-     * @var \Config_Command
-     */
-    protected $configTemplate;
 
     /**
      * The installation URL.
@@ -195,7 +175,63 @@ class Installation
      *
      * @var WordPressDatabaseInterface
      */
-    protected $db;
+    protected $wordPressDatabase;
+
+    /**
+     * Whether the current installation is installed or not.
+     *
+     * @var bool
+     */
+    protected $isInstalled;
+
+    /**
+     * Whether the current installation is configured or not.
+     *
+     * @var bool
+     */
+    protected $isConfigured;
+
+    /**
+     * The localhost port the installation is being served on or `false` if the installation is not being served.
+     *
+     * @var int|bool
+     */
+    protected $serverPort = false;
+
+    /**
+     * The localhost URL the installation is being served on or `false` if the installation is not being served.
+     *
+     * @var string|bool
+     */
+    protected $serverUrl = false;
+
+    /**
+     * The default server host.
+     *
+     * @var string
+     */
+    protected $defaultServerHost = 'localhost';
+
+    /**
+     * Whether the current installation is being served or not.
+     *
+     * @var bool
+     */
+    protected $isBeingServed = false;
+
+    /**
+     * The process instance handling the wp-cli `server` command.
+     *
+     * @var Process
+     */
+    protected $serverProcess;
+
+    /**
+     * The localhost IP address or domain.
+     *
+     * @var string
+     */
+    protected $localhostAddress = 'localhost';
 
     /**
      * Installation constructor.
@@ -208,36 +244,105 @@ class Installation
      */
     public function __construct($rootDir, $version = 'latest', $locale = 'en_US', $skipContent = false)
     {
-        $this->requireWpCliFiles();
-
-        if (!(is_dir($rootDir) && is_writable($rootDir))) {
-            throw new \InvalidArgumentException("Installation root directory [{$rootDir}] is not valid.");
-        }
-
         $this->rootDir = rtrim($rootDir, '/\\');
         $this->requestVersion = $version;
         $this->locale = $locale;
         $this->skipContent = $skipContent;
-
-        $this->wpCliLogger = new BufferLogger();
     }
 
+    /**
+     *
+     *
+     * @return $this
+     */
     public function download()
     {
-        \WP_CLI::set_logger($this->wpCliLogger);
+        $this->setUpWpCli($this->getRootDir());
 
-        $coreCommand = $this->coreCommand ?: new \Core_Command();
-        $coreCommand->download([], [
-            'path' => $this->rootDir,
+        $options = [
             'locale' => $this->locale,
             'version' => $this->requestVersion,
-            'skipContent' => $this->skipContent,
-            'force' => false,
-        ]);
+        ];
+
+        if ($this->skipContent) {
+            $options['skip-content'] = '1';
+        }
+
+        $command = array_merge(['core', 'download'], $this->wpCliOptions($options));
+
+        $this->createRootDir();
+
+        codecept_debug('Downloading WordPress with command: ' . json_encode($command));
+
+        $download = $this->executeWpCliCommand($command);
+
+        codecept_debug($download->getOutput());
+
+        if ($download->getExitCode() !== 0) {
+            throw InstallationException::becauseDownloadFailed($this, $download);
+        }
+
+        $this->wpVersion = $this->getVersion(true);
 
         return $this;
     }
 
+    /**
+     * Returns the absolute path to the installation root directory.
+     *
+     * @return string The absolute path to the installation root directory.
+     */
+    public function getRootDir($path = null)
+    {
+        return empty($path) ?
+            $this->rootDir
+            : $this->rootDir . '/' . trim($path, '/\\');
+    }
+
+    /**
+     * Creates the installation root directory.
+     *
+     * @throws InstallationException If the installation root directory cannot be created.
+     */
+    protected function createRootDir()
+    {
+        if (!is_dir($this->rootDir)
+            && !mkdir($destDir = $this->rootDir, 0777, true) && !is_dir($destDir)
+        ) {
+            throw InstallationException::becauseRootDirCannotBeCreated($this);
+        }
+    }
+
+    /**
+     * Returns the installed WordPress version.
+     *
+     * @param bool $refetch Whether to use the cached value or to rerun the `core version` command and refetch the
+     *                      version.
+     *
+     * @return string The installed WordPress version, e.g. `5.2.1`.
+     */
+    public function getVersion($refetch = false)
+    {
+        if (null === $this->wpVersion || $refetch) {
+            $this->wpVersion = trim($this->executeWpCliCommand(['core', 'version'])->getOutput(), PHP_EOL);
+        }
+
+        return $this->wpVersion;
+    }
+
+    /**
+     * Installs the installation.
+     *
+     * @param string|null $url           The installation URL to use; defaults to a random one.
+     * @param string|null $title         The installation site title; defaults to a random one.
+     * @param string|null $adminUser     The installation administrator user name; defaults to a random one.
+     * @param string|null $adminPassword The installation administrator password; defaults to a random one.
+     * @param null        $adminEmail    The installation administrator email; defaults to a random one.
+     *
+     * @return $this This.
+     *
+     * @throws InstallationException If the installation installation fails.
+     */
     public function install($url = null, $title = null, $adminUser = null, $adminPassword = null, $adminEmail = null)
     {
         $this->setUpFaker($this->locale);
@@ -249,61 +354,29 @@ class Installation
         $this->adminPassword = $adminPassword ?: $this->faker->password;
         $this->adminEmail = $adminEmail ?: $this->faker->email;
 
-        $process = $this->executeWpCliCommand([
-            'install',
-            $this->wpCliOptions([
-                'path' => $this->rootDir,
-                'url' => $this->url,
-                'title' => $this->title,
-                'admin_user' => $this->adminUser,
-                'admin_password' => $this->adminPassword,
-                'admin_email' => $this->adminEmail,
-                'skip-email' => true,
-            ])
-        ]);
+        $options = [
+            'path' => $this->rootDir,
+            'url' => $this->url,
+            'title' => $this->title,
+            'admin_user' => $this->adminUser,
+            'admin_password' => $this->adminPassword,
+            'admin_email' => $this->adminEmail,
+            'skip-email' => '1',
+        ];
+
+        $command = array_merge(['core', 'install'], $this->wpCliOptions($options));
+
+        codecept_debug('Installing WordPress with command: ' . json_encode($command));
+
+        $install = $this->executeWpCliCommand($command);
+
+        codecept_debug($install->getOutput());
+
+        if ($install->getExitCode() !== 0) {
+            throw InstallationException::becauseInstallationFailed($this, $install);
+        }
 
         return $this;
-    }
-
-    /**
-     * Sets the core command the installation should use to download and install WordPress.
-     *
-     * @param \Core_Command $coreCommand A Core command instance, from the wp-cli package.
-     */
-    public function setCoreCommand(\Core_Command $coreCommand)
-    {
-        $this->coreCommand = $coreCommand;
-    }
-
-    /**
-     * Returns the wp-cli logger instance used during the installation operations.
-     *
-     * @return Base The wp-cli logger instance used during installation operations.
-     */
-    public function getWpCliLogger()
-    {
-        return $this->wpCliLogger;
-    }
-
-    /**
-     * Sets the wp-cli logger that should be used to log messages.
-     *
-     * @param Base $wpCliLogger The logger instance to use.
-     */
-    public function setWpCliLogger($wpCliLogger)
-    {
-        $this->wpCliLogger = $wpCliLogger;
-    }
-
-    /**
-     * Sets the configuration command instance the installation should use to configure itself.
-     *
-     * @param \Config_Command $configTemplate The configuration command instance the installation should use to
-     *                                        configure itself.
-     */
-    public function setConfigTemplate($configTemplate)
-    {
-        $this->configTemplate = $configTemplate;
     }
 
     /**
@@ -321,55 +394,203 @@ class Installation
     }
 
     /**
-     * Returns the absolute path to the installation root directory.
-     *
-     * @return string The absolute path to the installation root directory.
-     */
-    public function getRootDir($path = null)
-    {
-        return empty($path) ?
-            $this->rootDir
-            : $this->rootDir . '/' . trim($path, '/\\');
-    }
-
-    /**
      * Configures the WordPress installation.
      *
-     * @param WordPressDatabaseInterface|null $database The database instance to get configuration information from.
+     * @param WordPressDatabaseInterface $database The database instance to get configuration information from.
      *
-     * @return $this This object.
+     * @return $this This.
+     * @throws InstallationException If the installation configuration fails.
+     * @throws WpCliException If wp-cli configuration fails.
      */
     public function configure(WordPressDatabaseInterface $database)
     {
-        $this->db = $database;
+        $this->setUpWpCli($this->getRootDir());
 
-        \WP_CLI::set_logger($this->wpCliLogger);
-        $configTemplate = $this->configTemplate ?:
-            new  Template(file_get_contents(__DIR__ . '/wp-config.php.template'));
+        $this->wordPressDatabase = $database;
 
-        $arr = [
-            'dbName' => $this->db->getName(),
-            'dbUser' => $this->db->getUser(),
-            'dbPass' => $this->db->getPassword(),
-            'dbHost' => $this->db->getHost(),
-            'dbPrefix' => $this->db->getTablePrefix(),
-            'dbCharset' => $this->db->getCharset(),
-            'dbCollate' => $this->db->getCollation(),
+        $options = [
+            'dbname' => $this->wordPressDatabase->getName(),
+            'dbuser' => $this->wordPressDatabase->getUser(),
+            'dbpass' => $this->wordPressDatabase->getPassword(),
+            'dbhost' => $this->wordPressDatabase->getHost(),
+            'dbprefix' => $this->wordPressDatabase->getTablePrefix(),
+            'dbcharset' => $this->wordPressDatabase->getCharset(),
+            'dbcollate' => $this->wordPressDatabase->getCollation(),
             'locale' => $this->locale,
-            'extraPhp' => $this->db->getExtraPhp() . PHP_EOL . $this->extraPhp,
+            'extra-php' => $this->wordPressDatabase->getExtraPhp() . PHP_EOL . $this->extraPhp,
         ];
 
-        foreach ($arr as $key => $value) {
-            $configTemplate->place($key, $value);
+        if ($this->wordPressDatabase->shouldSkipCheck()) {
+            $options['skip-check'] = 1;
         }
 
-        $wpConfigFile = $this->getRootDir('wp-config.php');
-        $put = file_put_contents($wpConfigFile, $configTemplate->produce(), LOCK_EX);
+        $command = array_merge(['config', 'create'], $this->wpCliOptions($options));
 
-        if (!$put) {
-            throw new \RuntimeException("Could not write installation wp-config.php file [{$wpConfigFile}]");
+        codecept_debug('Configuring WordPress with command: ' . json_encode($command));
+
+        $configure = $this->executeWpCliCommand($command);
+
+        codecept_debug($configure->getOutput());
+
+        if ($configure->getExitCode() !== 0) {
+            throw InstallationException::becauseConfigurationFailed($this, $configure);
         }
 
         return $this;
+    }
+
+    /**
+     * Returns whether the installation is installed or not.
+     *
+     * @param bool $refetch Whether to use the cached value, if available, or to force a new check.
+     *
+     * @return bool Whether the installation is installed or not.
+     */
+    public function isInstalled($refetch = false)
+    {
+        if (null === $this->isInstalled || $refetch) {
+            $isInstalled = $this->setUpWpCli($this->rootDir)->executeWpCliCommand(['core', 'is-installed']);
+            $this->isInstalled = $isInstalled->getExitCode() === 0;
+        }
+
+        return $this->isInstalled;
+    }
+
+    /**
+     * Returns whether the installation has a wp-config.php file or not.
+     *
+     * @return bool Whether the installation has a wp-config.php file or not.
+     */
+    public function isConfigured()
+    {
+        return file_exists($this->getRootDir('wp-config.php'));
+    }
+
+    /**
+     * Returns the localhost URL the installation is being served on.
+     *
+     * @return string|bool The localhost URL the installation is being served on, or `false` if the installation is not
+     *                  being served.
+     */
+    public function getServerUrl()
+    {
+        return $this->serverUrl ?: false;
+    }
+
+    /**
+     * Returns whether the installation is currently being served or not.
+     *
+     * return bool Whether the installation is currently being served or not.
+     */
+    public function isBeingServed()
+    {
+        return $this->isBeingServed;
+    }
+
+    /**
+     * Returns the localhost port the installation is being served on.
+     *
+     * @return bool|int The localhost port the installation is being served on, or `false` if the installation is not
+     *                  being served.
+     */
+    public function getServerPort()
+    {
+        return $this->serverPort ?: false;
+    }
+
+    /**
+     * Serves the installation on a specific localhost port and returns the installation URL.
+     *
+     * @param int $port The localhost port to serve the installation on.
+     *
+     * @return string The URL where the installation is being served.
+     * @throws InstallationException If the server command fails.
+     * @throws WpCliException If there's an issue while setting up the wp-cli executable.
+     */
+    public function serve($port = 8080)
+    {
+        $this->setUpWpCli($this->getRootDir());
+
+        $this->serverUrl = "http://{$this->localhostAddress}:{$port}";
+        $this->serverPort = $port;
+
+        if (!$this->serverUrl !== $this->url) {
+            $this->url = $this->serverUrl;
+            $this->updateOptionWithWpcli('siteurl', $this->serverUrl);
+            $this->updateOptionWithWpcli('home', $this->serverUrl);
+            codecept_debug(sprintf('Installation URL changed to [%s]', $this->serverUrl));
+        }
+
+        $command = array_merge(['server'], $this->wpCliOptions([
+            'host' => $this->defaultServerHost,
+            'port' => $port,
+            'docroot' => $this->rootDir,
+        ]));
+
+        codecept_debug('Serving WordPress with command: ' . json_encode($command));
+
+        $serve = $this->executeBackgroundWpCliCommand($command);
+
+        if (!$serve->isStarted()) {
+            throw InstallationException::becauseInstallationCannotBeServed($this, $serve);
+        }
+
+        codecept_debug('Server process PID: ' . $serve->getPid());
+
+        $this->isBeingServed = true;
+        $this->serverProcess = $serve;
+
+        return $this->serverUrl;
+    }
+
+    /**
+     * Ensure the installation server process will be killed on destruction of the installation object.
+     *
+     * @throws WpCliException If the wp-cli server process is running and it cannot be correctly stopped.
+     */
+    public function __destruct()
+    {
+        $this->stopServing();
+    }
+
+    /**
+     * Stops the wp-cli process currently serving the site on localhost.
+     *
+     * The method will just return if the site is not currently being served.
+     *
+     * @throws WpCliException If the wp-cli server process cannot be stopped.
+     */
+    public function stopServing()
+    {
+        if (!($this->serverProcess instanceof Process && $this->serverProcess->isRunning())) {
+            $this->isBeingServed = false;
+            $this->serverUrl = false;
+            $this->serverPort = false;
+            return;
+        }
+
+        $pid = $this->serverProcess->getPid();
+        codecept_debug("Stopping installation wp-cli server process (PID: {$pid})...");
+
+        $this->serverProcess->stop();
+
+        if ($this->serverProcess->getStatus() !== Process::STATUS_TERMINATED) {
+            throw  WpCliException::becauseACommandFailed($this->serverProcess);
+        }
+
+        codecept_debug("Installation wp-cli server process (PID: {$pid}) stopped.");
+
+        $this->serverUrl = false;
+        $this->serverPort = false;
+    }
+
+    /**
+     * Returns the installation database object, if any.
+     *
+     * @return WordPressDatabaseInterface
+     */
+    public function getDatabase()
+    {
+        return $this->wordPressDatabase;
     }
 }

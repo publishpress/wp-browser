@@ -3,6 +3,7 @@ namespace Codeception\TestCase;
 
 // phpcs:disable
 use Codeception\Test\Unit;
+use tad\WPBrowser\Environment\Database\Sqlite;
 
 if (!class_exists('WP_UnitTest_Factory')) {
     require_once dirname(dirname(dirname(__FILE__))) . '/includes/factory.php';
@@ -171,6 +172,7 @@ class WPTestCase extends \tad\WPBrowser\Compat\Codeception\Unit
 
     public function _setUp()
     {
+        Unit::_setup();
         set_time_limit(0);
 
         if (!self::$ignore_files) {
@@ -944,5 +946,16 @@ class WPTestCase extends \tad\WPBrowser\Compat\Codeception\Unit
     public function queries()
     {
         return $this->getModule('WPQueries');
+    }
+
+    /**
+     * Returns whether the test case is currently using a SQLite database or not.
+     *
+     * @return bool Whether the test case is currently using a SQLite database or not.
+     */
+    protected static function using_sqlite_wpdb()
+    {
+        global $wpdb;
+        return get_class($wpdb) === 'WP_SQLite_DB\\wpsqlitedb';
     }
 }

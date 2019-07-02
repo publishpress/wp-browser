@@ -120,7 +120,7 @@ class WPCLI extends Module
         $process = $this->executeWpCliCommand($command, $this->timeout);
 
         $output = $process->getOutput();
-        $status = $process->getStatus();
+        $status = $process->getExitCode();
 
         $this->debugSection('output', $output);
         $this->debugSection('status', $status);
@@ -169,8 +169,12 @@ class WPCLI extends Module
      */
     protected function evaluateStatus($output, $status)
     {
-        if (!empty($this->config['throw']) && $status < 0) {
-            $output = !is_array($output) ?: json_encode($output);
+        if ($status < 0 && !empty($this->config['throw'])) {
+            if (is_array($output)) {
+                $output = json_encode($output);
+            } else {
+                $output = $output;
+            }
             $message = "wp-cli terminated with status [{$status}] and output [{$output}]\n\nWPCLI module is configured "
                 . 'to throw an exception when wp-cli terminates with an error status; '
                 . 'set the `throw` parameter to `false` to avoid this.';
@@ -220,7 +224,7 @@ class WPCLI extends Module
         $process = $this->executeWpCliCommand($command, $this->timeout);
 
         $output = $process->getOutput();
-        $status = $process->getStatus();
+        $status = $process->getExitCode();
 
         $this->debugSection('output', $output);
         $this->debugSection(' status', $status);

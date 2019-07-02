@@ -5,20 +5,21 @@
  * @package tad\WPBrowser\Module\Traits
  */
 
-namespace tad\WPBrowser\Module\Traits;
+namespace tad\WPBrowser\Traits;
 
 use Codeception\Application;
 use Codeception\Exception\ModuleException;
+use Codeception\Lib\ModuleContainer;
 use Codeception\Util\ReflectionHelper;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
- * Trait EventListener
+ * Trait WithCodeceptionEvents
  *
  * @package tad\WPBrowser\Module\Traits
  * @property \Codeception\Lib\ModuleContainer $moduleContainer
  */
-trait EventListener
+trait WithCodeceptionEvents
 {
 
     /**
@@ -29,17 +30,17 @@ trait EventListener
     protected $dispatcher;
 
     /**
-     * Adds a callback to be performed on a global runner event..
+     * Adds a callback to be performed on a global runner event.
      *
-     * @param  string    $event     The event to run the callback on.
-     * @param  callable  $callback  The callback to run on the event.
-     * @param  int       $priority  The priority that will be assigned to the callback in the context of the event.
+     * @param string   $event    The event to run the callback on.
+     * @param callable $callback The callback to run on the event.
+     * @param int      $priority The priority that will be assigned to the callback in the context of the event.
      *
      * @throws \Codeception\Exception\ModuleException
      */
     protected function addAction($event, $callback, $priority = 0)
     {
-        $this->getEventDispatcher()->addListener($event, $callback, $priority);
+        $this->getCodeceptionEventDispatcher()->addListener($event, $callback, $priority);
     }
 
     /**
@@ -51,7 +52,7 @@ trait EventListener
      *                         `run` command dispatcher property cannot be accessed or is not an `EventDispatcher`
      *                         instance.
      */
-    protected function getEventDispatcher()
+    protected function getCodeceptionEventDispatcher()
     {
         if ($this->dispatcher instanceof EventDispatcher) {
             return $this->dispatcher;
@@ -60,7 +61,7 @@ trait EventListener
         /** @var \Codeception\Application $app */
         global $app;
 
-        if (! $app instanceof Application) {
+        if (!$app instanceof Application) {
             throw new ModuleException(
                 $this,
                 'Global `app` object is either empty or not an instance of the \Codeception\Application class.'
@@ -72,7 +73,7 @@ trait EventListener
 
         try {
             /** @var \Codeception\Codecept $codecept */
-            $codecept   = ReflectionHelper::readPrivateProperty($runCommand, 'codecept');
+            $codecept = ReflectionHelper::readPrivateProperty($runCommand, 'codecept');
             $dispatcher = $codecept->getDispatcher();
         } catch (\ReflectionException $e) {
             throw new ModuleException(
@@ -81,7 +82,7 @@ trait EventListener
                 $e->getMessage()
             );
         }
-        if (! $dispatcher instanceof EventDispatcher) {
+        if (!$dispatcher instanceof EventDispatcher) {
             throw new ModuleException($this, sprintf(
                 '\\Codeception\\Codecept::$eventDispatcher property is not an instance of %s; value is instead: %s',
                 EventDispatcher::class,

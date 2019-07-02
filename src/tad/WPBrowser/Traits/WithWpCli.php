@@ -7,7 +7,9 @@
 
 namespace tad\WPBrowser\Traits;
 
+use Symfony\Component\Process\Exception\ProcessFailedException;
 use tad\WPBrowser\Adapters\Process;
+use tad\WPBrowser\Exceptions\WpCliException;
 use WP_CLI\Configurator;
 
 /**
@@ -39,7 +41,28 @@ trait WithWpCli
     protected $wpCliProcess;
 
     /**
+     * Sets up the wp-cli handler in a specific directory.
+     *
+     * @param string       $wpRootFolderDir The absolute path to the WordPress installation root directory.
+     * @param Process|null $process         The process wrapper instance to use.
+     *
+     * @return WithWpCli This object instance.
+     *
+     * @throws WpCliException If wp-cli package files cannot be located while requiring them.
+     */
+    protected function setUpWpCli($wpRootFolderDir, Process $process = null)
+    {
+        $this->requireWpCliFiles();
+        $this->wpCliWpRootDir = $wpRootFolderDir;
+        $this->wpCliProcess = $process ?: new Process();
+
+        return $this;
+    }
+
+    /**
      * Requires some wp-cli package files that could not be autoloaded.
+     *
+     * @throws WpCliException If wp-cli package files cannot be located.
      */
     protected function requireWpCliFiles()
     {
@@ -58,7 +81,7 @@ trait WithWpCli
      *
      * @return string The absolute path to the wp-cli package root directory.
      *
-     * @throws \RuntimeException If the path to the WP_CLI\Configurator class cannot be resolved.
+     * @throws WpCliException If the path to the WP_CLI\Configurator class cannot be resolved.
      */
     protected function getWpCliRootDir($path = null)
     {
@@ -66,7 +89,7 @@ trait WithWpCli
             try {
                 $ref = new \ReflectionClass(Configurator::class);
             } catch (\ReflectionException $e) {
-                throw new \RuntimeException('Could not find the path to embedded WPCLI Configurator class');
+                throw WpCliException::becauseConfiguratorClassCannotBeFound();
             }
 
             $wpCliRootDir = dirname($ref->getFileName()) . '/../../';
@@ -86,66 +109,6 @@ trait WithWpCli
     }
 
     /**
-     * Sets up the cli.
-     *
-     * @param string       $wpRootFolderDir The absolute path to the WordPress installation root directory.
-     * @param Process|null $process         The process wrapper instance to use.
-     */
-    protected function setUpWpCli($wpRootFolderDir, Process $process = null)
-    {
-        $this->wpCliWpRootDir = $wpRootFolderDir;
-        $this->wpCliProcess = $process ?: new Process();
-    }
-
-    /**
-     * Executes a wp-cli command.
-     *
-     * @param array          $command   The command fragments; a mix of arguments and options. The `path` option will
-     *                                  be always set from the `setUpWpCli` method.
-     * @param int|float|null $timeout   The timeout, in seconds, to use for the command. Use `null` to remove the
-     *                                  timeout entirely.
-     *
-     * @return \Symfony\Component\Process\Process The process object that executed the command.
-     */
-    protected function executeWpCliCommand(array $command = ['version'], $timeout = 60)
-    {
-        $fullCommand = $this->buildFullCommand($command);
-        $process = $this->wpCliProcess->forCommand($fullCommand, $this->wpCliWpRootDir);
-        $process->setTimeout($timeout);
-        $process->run();
-
-        return $process;
-    }
-
-    /**
-     * Builds the full command to run including the PHP binary and the wp-cli boot file path.
-     *
-     * @param array|string $command The command to run.
-     *
-     * @return array The full command.
-     */
-    public function buildFullCommand($command)
-    {
-        $fullCommand = array_merge([
-            escapeshellarg(PHP_BINARY),
-            escapeshellarg($this->getWpCliBootFilePath())
-        ], (array)$command);
-        return $fullCommand;
-    }
-
-    /**
-     * Returns the absolute path the the wp-cli boot file.
-     *
-     * @return string The absolute path the the wp-cli boot file.
-     *
-     * @throws \RuntimeException If the path to the WP_CLI\Configurator class cannot be resolved.
-     */
-    protected function getWpCliBootFilePath()
-    {
-        return $this->getWpCliRootDir('/php/boot-fs.php');
-    }
-
-    /**
      * Formats an associative array of options to be used as wp-cli options.
      *
      * @param array $options The array of wp-cli options to format.
@@ -154,25 +117,26 @@ trait WithWpCli
      */
     protected function wpCliOptions(array $options)
     {
-        $buffer = [];
+        $formatted = [];
 
         foreach ($options as $key => $value) {
             if ($value !== true) {
                 // Normal options.
-                $buffer [] = '--' . ltrim($key, '-') . '=' . escapeshellarg($value);
+                $formatted [] = '--' . ltrim($key, '-') . '=' . $value;
             } else {
                 // Flag options.
-                $buffer [] = '--' . ltrim($key, '-');
+                $formatted [] = '--' . ltrim($key, '-');
             }
         }
 
-        return $buffer;
+        return $formatted;
     }
 
     /**
      * Parses the inline options found in a command and returns them in an associative array.
      *
-     * @param string|array $command The command to parse.
+     * @param string|array $command The command to parse
+     *                              .
      *
      * @return array An associative array of all the options found in the command.
      */
@@ -191,5 +155,115 @@ trait WithWpCli
         $parsed = array_filter($parsed);
 
         return count($parsed) ? array_merge(...array_filter($parsed)) : [];
+    }
+
+    /**
+     * Updates an option in the database.
+     *
+     * @param string $name     The option name.
+     * @param string $value    The option value.
+     * @param string $autoload One of `yes` or `no` to indicate if the option should be auto-loaded by WordPress or not.
+     * @param string $format   The option serialization format, one of `plaintext` or `json`.
+     *
+     * @throws WpCliException If the option update command fails.
+     */
+    protected function updateOptionWithWpcli($name, $value, $autoload = 'yes', $format = 'plaintext')
+    {
+        if (!$this->wpCliWpRootDir) {
+            throw WpCliException::becauseCommandRequiresSetUp();
+        }
+
+        $autoloadOption = "--autoload={$autoload}";
+        $formatOption = "--format={$format}";
+
+        $command = ['option', 'update', $name, $value, $autoloadOption, $formatOption];
+
+        codecept_debug('Updating WordPress option with command: ' . json_encode($command));
+
+        $set = $this->executeWpCliCommand($command);
+
+        codecept_debug($set->getOutput());
+
+        if ($set->getExitCode() !== 0) {
+            throw WpCliException::becauseACommandFailed($set);
+        }
+    }
+
+    /**
+     * Executes a wp-cli command.
+     *
+     * @param array          $command   The command fragments; a mix of arguments and options.
+     * @param int|float|null $timeout   The timeout, in seconds, to use for the command. Use `null` to remove the
+     *                                  timeout entirely.
+     *
+     * @return \Symfony\Component\Process\Process The process object that executed the command.
+     * @throws WpCliException If wp-cli has not been set up first.
+     */
+    protected function executeWpCliCommand(array $command = ['version'], $timeout = 60)
+    {
+        $fullCommand = $this->buildFullCommand($command);
+        $process = $this->wpCliProcess->forCommand($fullCommand, $this->wpCliWpRootDir);
+        $process->setTimeout($timeout);
+
+        try {
+            $process->mustRun();
+        } catch (ProcessFailedException $e) {
+            codecept_debug('WPCLI Process failed: ' . $e->getMessage());
+        }
+
+        return $process;
+    }
+
+    /**
+     * Builds the full command to run including the PHP binary and the wp-cli boot file path.
+     *
+     * @param array|string $command The command to run.
+     *
+     * @return array The full command including the current PHP binary and the absolute path to the wp-cli boot file.
+     *
+     * @throws WpCliException If there's an issue building the command.
+     */
+    public function buildFullCommand($command)
+    {
+        $fullCommand = array_merge([
+            PHP_BINARY,
+            $this->getWpCliBootFilePath()
+        ], (array)$command);
+        return $fullCommand;
+    }
+
+    /**
+     * Returns the absolute path the the wp-cli boot file.
+     *
+     * @return string The absolute path the the wp-cli boot file.
+     *
+     * @throws WpCliException If the path to the WP_CLI\Configurator class cannot be resolved.
+     */
+    protected function getWpCliBootFilePath()
+    {
+        return $this->getWpCliRootDir('/php/boot-fs.php');
+    }
+
+    /**
+     * Executes a wp-cli command asynchronously.
+     *
+     * @param array $command The command fragments; a mix of arguments and options.
+     *
+     * @return \Symfony\Component\Process\Process The process object that is handling the command execution.
+     * @throws WpCliException If wp-cli has not been set up first.
+     */
+    protected function executeBackgroundWpCliCommand(array $command)
+    {
+        $fullCommand = $this->buildFullCommand($command);
+        $process = $this->wpCliProcess->forCommand($fullCommand, $this->wpCliWpRootDir);
+        $process->setTimeout(null);
+
+        try {
+            $process->start();
+        } catch (\Exception $e) {
+            codecept_debug('WPCLI background process failed: ' . $e->getMessage());
+        }
+
+        return $process;
     }
 }

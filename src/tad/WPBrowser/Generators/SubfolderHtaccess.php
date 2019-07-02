@@ -3,6 +3,7 @@
 namespace tad\WPBrowser\Generators;
 
 use Handlebars\Handlebars;
+use tad\WPBrowser\Interfaces\TemplateProviderInterface;
 
 class SubfolderHtaccess implements TemplateProviderInterface
 {

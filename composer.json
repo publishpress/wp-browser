@@ -32,7 +32,9 @@
     "vlucas/phpdotenv": "^3.0",
     "xamin/handlebars.php": "~0.10",
     "wp-cli/wp-cli-bundle": ">=2.0 <3.0.0",
-    "fzaninotto/faker": "^1.8"
+    "fzaninotto/faker": "^1.8",
+    "edwindayot/faker-provider-animals": "^1.0",
+    "ext-sqlite3": "*"
   },
   "require-dev": {
     "erusev/parsedown": "^1.7",

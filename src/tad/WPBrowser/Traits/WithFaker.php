@@ -8,6 +8,7 @@
 namespace tad\WPBrowser\Traits;
 
 use Faker\Factory;
+use FakerProviderAnimals\Animals;
 
 /**
  * Trait WithFaker
@@ -40,5 +41,6 @@ trait WithFaker
         }
 
         $this->faker = Factory::create($locale);
+        $this->faker->addProvider(new Animals($this->faker));
     }
 }

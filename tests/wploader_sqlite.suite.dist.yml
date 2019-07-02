@@ -7,5 +7,5 @@ modules:
         WPLoader:
             wpRootFolder: "%WP_ROOT_FOLDER%"
             useSqlite: true
-            plugins: ['my-plugin/my-plugin.php']
-            activatePlugins: ['my-plugin/my-plugin.php']
+            plugins: []
+            activatePlugins: []

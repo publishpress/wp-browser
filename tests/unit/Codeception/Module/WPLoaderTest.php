@@ -8,13 +8,14 @@ use Prophecy\Argument;
 use Symfony\Component\Console\Output\BufferedOutput;
 use tad\Codeception\SnapshotAssertions\SnapshotAssertions;
 use tad\WPBrowser\Adapters\WP;
-use tad\WPBrowser\Environment\Database\Sqlite;
+use tad\WPBrowser\Traits\WithSqliteDatabase;
 use tad\WPBrowser\Traits\WithWordPressInstallations;
 
 class WPLoaderTest extends \Codeception\Test\Unit
 {
     use SnapshotAssertions;
     use WithWordPressInstallations;
+    use WithSqliteDatabase;
 
     protected $backupGlobals = false;
     /**
@@ -174,16 +175,15 @@ class WPLoaderTest extends \Codeception\Test\Unit
      */
     public function should_allow_using_sq_lite_as_database_backend()
     {
-        $database = new Sqlite();
         $installation = $this->scaffoldWpInstallation(
             codecept_output_dir('installations'),
-            'latest',
-            $database
+            'latest'
         );
         $this->config = [
             'wpRootFolder' => $installation->getRootDir(),
-            'useSqlite' => $database->getFilePath(),
+            'useSqlite' => $installation->getDatabase()->getName()
         ];
+
         $module = $this->make_instance();
     }
 

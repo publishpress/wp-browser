@@ -5,16 +5,22 @@ namespace Codeception\Module;
 use Codeception\Events;
 use Codeception\Exception\ModuleConfigException;
 use Codeception\Exception\ModuleConflictException;
+use Codeception\Exception\ModuleException;
 use Codeception\Lib\ModuleContainer;
 use Codeception\Module;
 use Codeception\Util\Debug;
 use Symfony\Component\Console\Output\ConsoleOutput;
 use Symfony\Component\Console\Output\OutputInterface;
 use tad\WPBrowser\Adapters\WP;
+use tad\WPBrowser\Environment\Database\Sqlite;
+use tad\WPBrowser\Environment\Installation;
+use tad\WPBrowser\Exceptions\SQLiteException;
 use tad\WPBrowser\Filesystem\Utils;
 use tad\WPBrowser\Module\Support\WPHealthcheck;
-use tad\WPBrowser\Module\Traits\EventListener;
 use tad\WPBrowser\Module\WPLoader\FactoryStore;
+use tad\WPBrowser\Traits\AsModulePartOfASuite;
+use tad\WPBrowser\Traits\WithCodeceptionEvents;
+use tad\WPBrowser\Traits\WithSqliteDatabase;
 
 /**
  * Class WPLoader
@@ -32,7 +38,9 @@ use tad\WPBrowser\Module\WPLoader\FactoryStore;
 class WPLoader extends Module
 {
 
-    use EventListener;
+    use WithCodeceptionEvents;
+    use WithSqliteDatabase;
+    use AsModulePartOfASuite;
 
     public static $includeInheritedActions = true;
 
@@ -100,32 +108,37 @@ class WPLoader extends Module
      * activated calling the `activate_{$plugin}` before any test case runs and
      * after mu-plugins have been loaded; these should be defined in the
      * `folder/plugin-file.php` format.
-     * bootstrapActions - array, def. `[]`, a list of actions that should be
-     * called after before any test case runs.
-     *
+     * bootstrapActions - array, def. `[]`, a list of actions that should be called after before any test case runs.
      *
      * @var array
      */
     protected $config
         = [
-            'loadOnly'         => false,
-            'isolatedInstall'  => true,
-            'wpDebug'          => true,
-            'multisite'        => false,
-            'dbCharset'        => 'utf8',
-            'dbCollate'        => '',
-            'tablePrefix'      => 'wptests_',
-            'domain'           => 'example.org',
-            'adminEmail'       => 'admin@example.org',
-            'title'            => 'Test Blog',
-            'phpBinary'        => 'php',
-            'language'         => '',
-            'configFile'       => '',
-            'pluginsFolder'    => '',
-            'plugins'          => '',
-            'activatePlugins'  => '',
+            'loadOnly' => false,
+            'isolatedInstall' => true,
+            'wpDebug' => true,
+            'multisite' => false,
+            'dbName' => '',
+            'dbUser' => '',
+            'dbPassword' => '',
+            'dbHost' => '',
+            'dbDir' => '',
+            'dbFile' => '',
+            'dbCharset' => 'utf8',
+            'dbCollate' => '',
+            'tablePrefix' => 'wptests_',
+            'domain' => 'example.org',
+            'adminEmail' => 'admin@example.org',
+            'title' => 'Test Blog',
+            'phpBinary' => 'php',
+            'language' => '',
+            'configFile' => '',
+            'pluginsFolder' => '',
+            'plugins' => '',
+            'activatePlugins' => '',
             'bootstrapActions' => '',
-            'theme'            => '',
+            'theme' => '',
+            'useSqlite' => false,
         ];
 
     /**
@@ -177,10 +190,32 @@ class WPLoader extends Module
     protected $healthcheck;
 
     /**
+     * The SQLite database connection handler.
+     *
+     * @var Sqlite
+     */
+    protected $sqliteDb;
+
+    /**
+     * The installation currently being used for the tests.
+     *
+     * @var Installation
+     */
+    protected $testInstallation;
+
+    /**
      * @var WP
      */
     private $wp;
 
+    /**
+     * WPLoader constructor.
+     *
+     * @param ModuleContainer    $moduleContainer The suite module container.
+     * @param array              $config          The configuration parameter.
+     * @param WP|null            $wp              The WordPress adapter object.
+     * @param WPHealthcheck|null $healthcheck     The WordPress health-check provider.
+     */
     public function __construct(
         ModuleContainer $moduleContainer,
         $config,
@@ -202,94 +237,67 @@ class WPLoader extends Module
      */
     public function _initialize()
     {
-        $this->initialize();
-    }
-
-    protected function initialize()
-    {
-        $this->ensureWPRoot($this->getWpRootFolder());
-
         // WordPress  will deal with database connection errors
         $this->wpBootstrapFile = dirname(dirname(__DIR__)) . '/includes/bootstrap.php';
 
-        if (empty($this->config['loadOnly'])) {
-            // Any *Db Module should either not be running or properly configured if this has to run alongside it.
-            $this->ensureDbModuleCompat();
-        } else {
+        if ($this->onlyLoading()) {
             $this->debug('WPLoader module will load WordPress when all other modules initialized.');
             $this->addAction(Events::SUITE_BEFORE, [$this, '_loadWordpress'], 0);
 
             return;
         }
 
+        $this->ensureDbModuleCompat();
+
         $this->_loadWordpress();
     }
 
     /**
-     * @param string $wpRootFolder
-     * @param bool $throw Whether to throw an exception on invalid path or return a value.
+     * Returns whether the module is configured to only load or not.
      *
-     * @return bool If `$throw` if `false` then this will be the value of j:w
-     *
-     *
-     * @throws \Codeception\Exception\ModuleConfigException If the specified WordPress root folder is not found or not
-     *                                                      valid.
+     * @return bool Whether the module is configured to only load or not.
      */
-    protected function ensureWPRoot($wpRootFolder, $throw = true)
+    protected function onlyLoading()
     {
-        if (! file_exists($wpRootFolder . DIRECTORY_SEPARATOR . 'wp-settings.php')) {
-            if (!$throw) {
-                return false;
-            }
-
-            throw new ModuleConfigException(
-                __CLASS__,
-                "\nThe path `{$wpRootFolder}` is not pointing to a valid WordPress installation folder."
-            );
-        }
-
-        return true;
+        return !empty($this->config['loadOnly']);
     }
 
     /**
-     * @return string
+     * Checks that other *Db modules loaded in the suite are configured correctly to work with WPLoader.
+     *
+     * @throws ModuleConflictException If another *Db module is not configured correctly.
      */
-    protected function getWpRootFolder()
-    {
-        if (empty($this->wpRootFolder)) {
-            $wpRootFolder = $this->config['wpRootFolder'];
-            // Maybe the user is using the `~` symbol for home?
-            $wpRootFolder = Utils::homeify($wpRootFolder);
-            // Remove `\ ` spaces in folder paths.
-            $wpRootFolder = str_replace('\ ', ' ', $wpRootFolder);
-            // Resolve to real path if relative or symlinked.
-            if ($realPath = realpath($wpRootFolder)) {
-                $wpRootFolder = $realPath;
-            }
-            // Allow me not to bother with trailing slashes.
-            $this->wpRootFolder = Utils::untrailslashit($wpRootFolder) . DIRECTORY_SEPARATOR;
-        }
-
-        return $this->wpRootFolder;
-    }
-
     protected function ensureDbModuleCompat()
     {
         $interference_candidates = ['Db', 'WPDb'];
         $allModules = $this->moduleContainer->all();
         foreach ($interference_candidates as $moduleName) {
-            if (! $this->moduleContainer->hasModule($moduleName)) {
+            if (!$this->moduleContainer->hasModule($moduleName)) {
                 continue;
             }
             /** @var \Codeception\Module $module */
             $module = $allModules[$moduleName];
-            $cleanup_config = $module->_getConfig('cleanup');
-            if (! empty($cleanup_config)) {
+            $cleanup = $module->_getConfig('cleanup');
+            $populate = $module->_getConfig('populate');
+            if (!(empty($cleanup) && empty($populate))) {
+                $dbConfigurationDoc = $moduleName === 'Db' ?
+                    'https://codeception.com/docs/modules/Db#Config'
+                    : 'https://wpbrowser.wptestkit.dev/summary/modules/wpdb#configuration';
+                $wpLoaderDoc = 'https://wpbrowser.wptestkit.dev/summary/' .
+                    'modules/wploader#wploader-to-only-bootstrap-wordpress';
                 throw new ModuleConflictException(
                     __CLASS__,
-                    "{$moduleName}\nThe WP Loader module is being used together with the {$moduleName} module: "
-                    . "the {$moduleName} module should have the 'cleanup' parameter set to 'false' not to interfere "
-                    . "with the WP Loader module."
+                    implode(PHP_EOL, array(
+                        "The WP Loader module is being used together with the {$moduleName} module and WPLoader "
+                        . '`loadOnly` parameter is not set to `true`.',
+                        'WPLoader will try to set up a fresh WordPress installation before the tests and this will '
+                        . "conflict with {$moduleName} attempt to populate or clean up the database before and/or " .
+                        'between tests.',
+                        "Either set the {$moduleName} `populate` and `cleanup` parameters both to `false` or set the "
+                        . 'WPLoader module `loadOnly` parameter to `true`.',
+                        "Read more about the {$moduleName} configuration at {$dbConfigurationDoc}.",
+                        "Read more about WPLoader and *Db modules interoperability at {$wpLoaderDoc}."
+                    ))
                 );
             }
         }
@@ -310,9 +318,7 @@ class WPLoader extends Module
 
         require_once dirname(dirname(__DIR__)) . '/includes/functions.php';
 
-        $onlyLoading = ! empty($this->config['loadOnly']);
-
-        if ($onlyLoading) {
+        if ($this->onlyLoading()) {
             $this->bootstrapWP();
         } else {
             $this->installAndBootstrapInstallation();
@@ -337,42 +343,68 @@ class WPLoader extends Module
     {
         $wpRootFolder = $this->getWpRootFolder();
 
-        // load an extra config file if any
+        // Load an extra config file if any.
         $this->loadConfigFile();
 
         $constants = [
             // by default install WordPress in an isolated process
             'WPCEPT_ISOLATED_INSTALL' => $this->requiresIsolatedInstallation(),
-            'ABSPATH'                 => $wpRootFolder,
-            'DB_NAME'                 => $this->config['dbName'],
-            'DB_USER'                 => $this->config['dbUser'],
-            'DB_PASSWORD'             => $this->config['dbPassword'],
-            'DB_HOST'                 => $this->config['dbHost'],
-            'DB_CHARSET'              => $this->config['dbCharset'],
-            'DB_COLLATE'              => $this->config['dbCollate'],
-            'WP_TESTS_TABLE_PREFIX'   => $this->config['tablePrefix'],
-            'WP_TESTS_DOMAIN'         => $this->config['domain'],
-            'WP_TESTS_EMAIL'          => $this->config['adminEmail'],
-            'WP_TESTS_TITLE'          => $this->config['title'],
-            'WP_PHP_BINARY'           => $this->config['phpBinary'],
-            'WPLANG'                  => $this->config['language'],
-            'WP_DEBUG'                => $this->config['wpDebug'],
-            'WP_TESTS_MULTISITE'      => $this->config['multisite'],
+            'ABSPATH' => $wpRootFolder,
+            'DB_NAME' => $this->config['dbName'],
+            'DB_USER' => $this->config['dbUser'],
+            'DB_PASSWORD' => $this->config['dbPassword'],
+            'DB_HOST' => $this->config['dbHost'],
+            'DB_DIR' => $this->config['dbDir'],
+            'DB_FILE' => $this->config['dbFile'],
+            'DB_CHARSET' => $this->config['dbCharset'],
+            'DB_COLLATE' => $this->config['dbCollate'],
+            'WP_TESTS_TABLE_PREFIX' => $this->config['tablePrefix'],
+            'WP_TESTS_DOMAIN' => $this->config['domain'],
+            'WP_TESTS_EMAIL' => $this->config['adminEmail'],
+            'WP_TESTS_TITLE' => $this->config['title'],
+            'WP_PHP_BINARY' => $this->config['phpBinary'],
+            'WPLANG' => $this->config['language'],
+            'WP_DEBUG' => $this->config['wpDebug'],
+            'WP_TESTS_MULTISITE' => $this->config['multisite'],
         ];
 
         foreach ($constants as $key => $value) {
-            if (! defined($key)) {
+            if (!defined($key)) {
                 define($key, $value);
             }
         }
 
-        if (! defined('WP_PLUGIN_DIR') && ! empty($this->config['pluginsFolder'])) {
+        if (!defined('WP_PLUGIN_DIR') && !empty($this->config['pluginsFolder'])) {
             define('WP_PLUGIN_DIR', $this->getPluginsFolder());
         }
     }
 
     /**
-     * @param  string  $folder  = null The absolute path to the WordPress root
+     * Parses the WordPress installation root folder from the configuration to ensure it's correct and returns it if so.
+     *
+     * @return string The absolute path to the WordPress installation root folder.
+     */
+    protected function getWpRootFolder()
+    {
+        if (empty($this->wpRootFolder)) {
+            $wpRootFolder = $this->config['wpRootFolder'];
+            // Maybe the user is using the `~` symbol for home?
+            $wpRootFolder = Utils::homeify($wpRootFolder);
+            // Remove `\ ` spaces in folder paths.
+            $wpRootFolder = str_replace('\ ', ' ', $wpRootFolder);
+            // Resolve to real path if relative or symlinked.
+            if ($realPath = realpath($wpRootFolder)) {
+                $wpRootFolder = $realPath;
+            }
+            // Allow me not to bother with trailing slashes.
+            $this->wpRootFolder = Utils::untrailslashit($wpRootFolder) . DIRECTORY_SEPARATOR;
+        }
+
+        return $this->wpRootFolder;
+    }
+
+    /**
+     * @param string $folder    = null The absolute path to the WordPress root
      *                          installation folder.
      *
      * @throws ModuleConfigException
@@ -383,9 +415,9 @@ class WPLoader extends Module
         $frags = $this->config['configFile'];
         $frags = is_array($frags) ?: [$frags];
         foreach ($frags as $frag) {
-            if (! empty($frag)) {
+            if (!empty($frag)) {
                 $configFile = Utils::findHereOrInParent($frag, $folder);
-                if (! file_exists($configFile)) {
+                if (!file_exists($configFile)) {
                     throw new ModuleConfigException(
                         __CLASS__,
                         "\nConfig file `{$frag}` could not be found in WordPress root folder or above."
@@ -405,8 +437,10 @@ class WPLoader extends Module
     }
 
     /**
-     * @return string
-     * @throws ModuleConfigException
+     * Returns the absolute path to the WordPress plugins folder.
+     *
+     * @return string The absolute path to the WordPress plugins folder.
+     * @throws ModuleConfigException If the specified plugins folder path does noe exist.
      */
     protected function getPluginsFolder()
     {
@@ -414,7 +448,7 @@ class WPLoader extends Module
             $path = empty($this->config['pluginsFolder']) ? WP_PLUGIN_DIR
                 : realpath($this->getWpRootFolder() . Utils::unleadslashit($this->config['pluginsFolder']));
 
-            if (! file_exists($path)) {
+            if (!file_exists($path)) {
                 throw new ModuleConfigException(
                     __CLASS__,
                     "The path to the plugins folder ('{$path}') doesn't exist."
@@ -427,6 +461,9 @@ class WPLoader extends Module
         return $this->pluginsFolder;
     }
 
+    /**
+     * Sets up and loads WordPress in the tests variable space.
+     */
     protected function bootstrapWP()
     {
         $this->ensureServerVars();
@@ -440,11 +477,14 @@ class WPLoader extends Module
         $this->factoryStore->setupFactories();
     }
 
+    /**
+     * Sets, if not set already, the required server variables.
+     */
     protected function ensureServerVars()
     {
         $serverDefaults = [
             'SERVER_PROTOCOL' => 'HTTP/1.1',
-            'HTTP_HOST'       => getenv('WP_DOMAIN') ? getenv('WP_DOMAIN') : $this->config['domain'],
+            'HTTP_HOST' => getenv('WP_DOMAIN') ? getenv('WP_DOMAIN') : $this->config['domain'],
         ];
 
         foreach ($serverDefaults as $key => $value) {
@@ -455,8 +495,27 @@ class WPLoader extends Module
     }
 
     /**
-     * Sets up the `current_site` global handling multisite and single site
-     * installation cases.
+     * Sets up a set of exit and error handlers to monitor the WordPress bootstrap and loading process.
+     */
+    protected function setupLoadWatchers()
+    {
+        register_shutdown_function([$this, '_wordPressExitHandler']);
+        tests_add_filter('wp_redirect', [$this, '_wordPressRedirectHandler'], 0, 2);
+        $this->loadRedirections = [];
+    }
+
+    /**
+     * Removes exit and error handlers to monitor the WordPress bootstrap and loading process.
+     */
+    protected function removeLoadWatchers()
+    {
+        $this->wpDidLoadCorrectly = true;
+        remove_filter('wp_redirect', [$this, '_wordPressRedirectHandler'], 0);
+        $this->loadRedirections = [];
+    }
+
+    /**
+     * Sets up the `current_site` global handling multisite and single site installation cases.
      */
     protected function setupCurrentSite()
     {
@@ -465,7 +524,7 @@ class WPLoader extends Module
 
         $current_site = new \stdClass;
 
-        if (! empty($wpdb->get_results("SHOW TABLES LIKE '{$wpdb->prefix}blogs'"))) {
+        if (!empty($wpdb->get_results("SHOW TABLES LIKE '{$wpdb->prefix}blogs'"))) {
             $query = "SELECT domain, path  FROM {$wpdb->prefix}blogs WHERE blog_id = 1 AND site_id = 1";
             $data = $wpdb->get_row($query);
             $current_site->domain = $data->domain;
@@ -473,7 +532,7 @@ class WPLoader extends Module
             $current_site->site_name = ucfirst($data->domain);
         } else {
             $site_url = $wpdb->get_var("SELECT option_value FROM {$wpdb->options} WHERE option_name = 'siteurl'");
-            if (! empty($site_url)) {
+            if (!empty($site_url)) {
                 $current_site->domain = parse_url($site_url, PHP_URL_HOST);
                 if ($port = parse_url($site_url, PHP_URL_PORT)) {
                     $current_site->domain .= ":{$port}";
@@ -487,12 +546,24 @@ class WPLoader extends Module
         $current_site->id = 1;
     }
 
+    /**
+     * Based on the integration tests Core suite PHPUnit tests it sets up, installs and loads WordPress in the tests.
+     *
+     * @throws ModuleException If any one of the setup, installation or bootstrap procedures fails.
+     * @throws SQLiteException If using a SQLite database and its backup failed.
+     */
     protected function installAndBootstrapInstallation()
     {
+        $this->testInstallation = new Installation($this->wpRootFolder);
+
+        if ($this->usingSqlite()) {
+            $this->prepareSqliteDatabase();
+        }
+
         $this->setActivePlugins();
         $this->_setActiveTheme();
 
-        if (! $this->requiresIsolatedInstallation()) {
+        if (!$this->requiresIsolatedInstallation()) {
             tests_add_filter('muplugins_loaded', [$this, '_loadPlugins']);
             tests_add_filter('wp_install', [$this, '_activatePlugins'], 100);
             tests_add_filter(
@@ -509,15 +580,77 @@ class WPLoader extends Module
             $this->_bootstrapActions();
             $this->_switchTheme();
         }
+
+//        if ($this->usingSqlite()) {
+//            $this->replaceWpdbWithSqliteInMemoryDatabase();
+//        }
     }
 
+    /**
+     * Returns whether the module is configured to use SQLite database or not.
+     *
+     * @return bool Whether the module is configured to use SQLite database or not.
+     */
+    protected function usingSqlite()
+    {
+        return isset($this->config['useSqlite']);
+    }
+
+    /**
+     * Prepares the SQLite database file in the test installation.
+     *
+     * @throws ModuleException If an issue arises while creating the SQLite database file or copying over the drop-in
+     * @throws \ReflectionException If there's an issue reflecting on the current module suite to fetch its name.
+     */
+    protected function prepareSqliteDatabase()
+    {
+        $sqliteDbFile = $this->getSqliteDbName();
+        try {
+            $this->debug("Creating SQLite database [{$sqliteDbFile}]");
+            $this->sqliteDb = $this->createSqliteDatabase($sqliteDbFile);
+            $this->sqliteDb->setInstallation($this->testInstallation);
+            register_shutdown_function([$this->sqliteDb, 'removeDropinFile']);
+        } catch (SQLiteException $e) {
+            throw new ModuleException($this, 'Error while creating SQLite database: ' . $e->getMessage());
+        }
+
+        $this->addAction(Events::SUITE_AFTER, [$this, 'removeSqliteDropin']);
+    }
+
+    /**
+     * Returns the absolute path to the SQLite database file that will be used in the tests.
+     *
+     * @return string The absolute path to the SQLite database file that will be used in tests.
+     */
+    protected function getSqliteDbName()
+    {
+        $sqliteFileName = $this->config['useSqlite'];
+
+        if (!is_string($sqliteFileName)) {
+            $sqliteFileName = $this->getSuiteName();
+        }
+
+        if (file_exists($sqliteFileName)) {
+            $sqliteFile = Utils::homeify($sqliteFileName);
+        } else {
+            $name = preg_replace('/\\.sqlite$/', '', $sqliteFileName);
+            $sqliteFile = codecept_output_dir("databases/sqlite/{$name}.sqlite");
+        }
+
+        return $sqliteFile;
+    }
+
+    /**
+     * Sets the active plugins options override to activate the plugins specified in the `activePlugins` coturiguration
+     * parameter.
+     */
     protected function setActivePlugins()
     {
         if (empty($this->config['plugins'])) {
             return;
         }
 
-        if (! empty($GLOBALS['wp_tests_options']['active_plugins'])) {
+        if (!empty($GLOBALS['wp_tests_options']['active_plugins'])) {
             $GLOBALS['wp_tests_options']['active_plugins'] = array_merge(
                 $GLOBALS['wp_tests_options']['active_plugins'],
                 $this->config['plugins']
@@ -537,7 +670,7 @@ class WPLoader extends Module
             return;
         }
 
-        if (! is_array($this->config['theme'])) {
+        if (!is_array($this->config['theme'])) {
             $template = $this->config['theme'];
             $stylesheet = $this->config['theme'];
         } else {
@@ -561,7 +694,7 @@ class WPLoader extends Module
         }
 
         foreach ($this->config['bootstrapActions'] as $action) {
-            if (! is_callable($action)) {
+            if (!is_callable($action)) {
                 do_action($action);
             } else {
                 call_user_func($action);
@@ -571,7 +704,7 @@ class WPLoader extends Module
 
     public function _switchTheme()
     {
-        if (! empty($this->config['theme'])) {
+        if (!empty($this->config['theme'])) {
             $stylesheet = is_array($this->config['theme']) ?
                 end($this->config['theme'])
                 : $this->config['theme'];
@@ -582,6 +715,32 @@ class WPLoader extends Module
             call_user_func([$this->wp, 'switch_theme'], $stylesheet);
             $this->wp->do_action('after_switch_theme', $stylesheet);
         }
+    }
+
+    protected function replaceWpdbWithSqliteInMemoryDatabase()
+    {
+        global $wpdb;
+
+        if (!$wpdb instanceof \WP_SQLite_DB\wpsqlitedb) {
+            throw new ModuleException(
+                $this,
+                'Error whitle trying to replace global `$wpdb` handle with in memory one: global `$wpdb` is ' .
+                'not an instance of `\WP_SQLite_DB\wpsqlitedb`.'
+            );
+        }
+
+        if (!defined('FQDB')) {
+            throw new ModuleException(
+                $this,
+                'Error while trying ot replace global `$wpdb` handle with in memory one: `FQDB` constant is ' .
+                'not defined.'
+            );
+        }
+
+        $inMemory = new Sqlite('sqlite::memory:', '', '');
+        $filePdo = new Sqlite('sqlite:' . FQDB, '', '');
+        Sqlite::dumpFromTo($filePdo, $inMemory);
+        $GLOBALS['@pdo'] = $inMemory->getDbh();
     }
 
     public function _activatePlugins()
@@ -610,14 +769,14 @@ class WPLoader extends Module
      */
     public function _loadPlugins()
     {
-        if (empty($this->config['plugins']) || ! defined('WP_PLUGIN_DIR')) {
+        if (empty($this->config['plugins']) || !defined('WP_PLUGIN_DIR')) {
             return;
         }
         $pluginsPath = $this->getPluginsFolder() . DIRECTORY_SEPARATOR;
         $plugins = $this->config['plugins'];
         foreach ($plugins as $plugin) {
             $path = $pluginsPath . $plugin;
-            if (! file_exists($path)) {
+            if (!file_exists($path)) {
                 throw new ModuleConfigException(
                     __CLASS__,
                     "The '{$plugin}' plugin file was not found in the {$pluginsPath} directory; "
@@ -635,13 +794,13 @@ class WPLoader extends Module
      * This methods gives access to the same factories provided by the
      * [Core test suite](https://make.wordpress.org/core/handbook/testing/automated-testing/writing-phpunit-tests/).
      *
+     * @return FactoryStore A factory store, proxy to get hold of the Core suite object factories.
+     *
      * @example
      * ```php
      * $postId = $I->factory()->post->create();
      * $userId = $I->factory()->user->create(['role' => 'administrator']);
      * ```
-     *
-     * @return FactoryStore A factory store, proxy to get hold of the Core suite object factories.
      *
      * @link https://make.wordpress.org/core/handbook/testing/automated-testing/writing-phpunit-tests/
      */
@@ -653,7 +812,7 @@ class WPLoader extends Module
     /**
      * Returns a closure to handle the exit of WordPress during the bootstrap process.
      *
-     * @param  OutputInterface|null  $output  An output stream.
+     * @param OutputInterface|null $output An output stream.
      */
     public function _wordPressExitHandler(OutputInterface $output = null)
     {
@@ -690,52 +849,40 @@ class WPLoader extends Module
             $dbModule = $moduleContainer->hasModule('WPDb') ? 'WPDb' : 'Db';
             $lines [] = '';
             $lines[] = "It looks like, alongside the WPLoader module, you are using the {$dbModule} one.";
-            if (empty($this->config['loadOnly'])) {
+            if ($this->onlyLoading()) {
                 $lines[] = 'Since the `WPLoader::loadOnly` parameter is not set or set to `false` both the '
-                           . "WPLoader module and the {$dbModule} one are trying to populate the database.";
+                    . "WPLoader module and the {$dbModule} one are trying to populate the database.";
                 $lines[] = "If you want to fill the database with a dump then keep using the {$dbModule} "
-                           . 'module but set the `WPLoader::loadOnly` parameter to `true` and make sure that, '
-                           . "in the suite configuration file, in the `modules` section, the {$dbModule} module comes"
-                           . ' before the WPLoader one.';
+                    . 'module but set the `WPLoader::loadOnly` parameter to `true` and make sure that, '
+                    . "in the suite configuration file, in the `modules` section, the {$dbModule} module comes"
+                    . ' before the WPLoader one.';
                 $lines[] = '';
                 $lines[] = 'If you are, instead, trying to run integration tests you do not probably need the'
-                           . " {$dbModule} module or should set the `populate` and `cleanup` arguments to `false`";
+                    . " {$dbModule} module or should set the `populate` and `cleanup` arguments to `false`";
             } else {
                 $lines[] = 'Since the `WPLoader::loadOnly` parameter is set to `true` the WPLoader module'
-                           . ' will not try to populate the database.';
+                    . ' will not try to populate the database.';
                 $lines[] = "The database should be populated from a dump using the {$dbModule} modules.";
                 $lines[] = 'Make sure the SQL dump you\'re trying to use is not empty and correct for the kind '
-                           . 'of installation you are trying to test.';
+                    . 'of installation you are trying to test.';
                 $lines[] = 'Make also sure that, in the suite configuration file, in the `modules` section, ' .
-                           "the {$dbModule} modules comes before the WPLoader one." .
-                           $lines[] = '';
+                    "the {$dbModule} modules comes before the WPLoader one." .
+                    $lines[] = '';
                 $lines[] = 'If you are, instead, trying to run integration tests you do not probably need the'
-                           . " {$dbModule} module or should set the `populate` and `cleanup` arguments to `false` and "
-                           . 'set the `WPLoader::loadOnly` parameter to `false` to let the WPLoader module populate the'
-                           . ' database for you.';
+                    . " {$dbModule} module or should set the `populate` and `cleanup` arguments to `false` and "
+                    . 'set the `WPLoader::loadOnly` parameter to `false` to let the WPLoader module populate the'
+                    . ' database for you.';
             }
             $lines[] = 'Find out more about this at '
-                       . 'https://wpbrowser.wptestkit.dev/summary/modules/wploader'
-                       . '#wploader-to-only-bootstrap-wordpress';
+                . 'https://wpbrowser.wptestkit.dev/summary/modules/wploader'
+                . '#wploader-to-only-bootstrap-wordpress';
         } else {
             $lines[] = 'Since the `WPLoader::loadOnly` parameter is set to `true` the WPLoader module'
-                       . ' will not try to populate the database.';
+                . ' will not try to populate the database.';
             $lines[] = 'The database should be populated from a dump using the WPDb/Db modules.';
         }
 
         $output->writeln('<error>' . implode(PHP_EOL, $lines) . '</error>');
-    }
-
-    protected function loadWordPressAfterDb()
-    {
-        $matchingModule = null;
-
-        $this->debug(sprintf(
-            'Module WPLoader will initialize after module %s initialized',
-            $matchingModule
-        ));
-
-        $this->_loadWordpress();
     }
 
     public function _wordPressRedirectHandler($location, $status)
@@ -751,17 +898,82 @@ class WPLoader extends Module
         return $location;
     }
 
-    protected function setupLoadWatchers()
+    /**
+     * Removes the SQLite database drop-in after the suite ran.
+     */
+    public function removeSqliteDropin()
     {
-        register_shutdown_function([$this, '_wordPressExitHandler']);
-        tests_add_filter('wp_redirect', [$this, '_wordPressRedirectHandler'], 0, 2);
-        $this->loadRedirections = [];
+        if (!$this->testInstallation instanceof Installation) {
+            codecept_debug('SQLite drop-in file not removed: WPLoader module is not currently managing a ' .
+                'WordPress installation.');
+            return;
+        }
+
+        if (!$this->sqliteDb instanceof Sqlite) {
+            codecept_debug('SQLite drop-in file not removed: WPLoader module is not using a SQLite database.');
+            return;
+        }
+
+        $dropinFile = $this->sqliteDb->getDropinFilePath();
+        $this->debug("Removing SQLite file database drop-in file [{$dropinFile}]");
+
+        try {
+            $this->sqliteDb->removeDropinFile();
+        } catch (SQLiteException $e) {
+            $this->debug("SQLite database drop-in file could not be removed [{$dropinFile}].");
+        }
     }
 
-    protected function removeLoadWatchers()
+    /**
+     * Overrides the base implementation to filter the required configuration parameters.
+     *
+     * @throws ModuleConfigException If a require configuration parameter is missing or wrong.
+     * @throws ModuleException If configuration parameters are missing or not correct.
+     */
+    protected function validateConfig()
     {
-        $this->wpDidLoadCorrectly = true;
-        remove_filter('wp_redirect', [$this, '_wordPressRedirectHandler'], 0);
-        $this->loadRedirections = [];
+        $this->ensureWPRoot($this->getWpRootFolder());
+        if ($this->usingSqlite()) {
+            $remove = [
+                'dbName',
+                'dbHost',
+                'dbUser',
+                'dbPassword',
+            ];
+            $this->requiredFields = array_diff($this->requiredFields, $remove);
+            $sqliteDbFile = $this->getSqliteDbName();
+            $this->config['dbDir'] = dirname($sqliteDbFile);
+            $this->config['dbFile'] = basename($sqliteDbFile);
+        }
+
+        // Finally let the base implementation check the final version of the configuration.
+        parent::validateConfig();
+    }
+
+    /**
+     * Checks the WordPress root folder set in the configuration to make sure it exists and it's the correct one.
+     *
+     * @param string $wpRootFolder The path, relative or absolute, to the WordPress root folder.
+     * @param bool   $throw        Whether to throw an exception on invalid path or return a value.
+     *
+     * @return bool If `$throw` if `false` then this will be the value of j:w
+     *
+     * @throws ModuleConfigException If the specified WordPress root folder is not found or not
+     *                                                      valid.
+     */
+    protected function ensureWPRoot($wpRootFolder, $throw = true)
+    {
+        if (!file_exists($wpRootFolder . DIRECTORY_SEPARATOR . 'wp-settings.php')) {
+            if (!$throw) {
+                return false;
+            }
+
+            throw new ModuleConfigException(
+                __CLASS__,
+                "\nThe path `{$wpRootFolder}` is not pointing to a valid WordPress installation folder."
+            );
+        }
+
+        return true;
     }
 }

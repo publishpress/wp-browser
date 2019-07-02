@@ -1,20 +1,12 @@
 <?php namespace tad\WPBrowser\Environment;
 
-use tad\WPBrowser\WPCLI\BufferLogger;
+use tad\WPBrowser\Traits\WithSqliteDatabase;
+use tad\WPBrowser\Traits\WithWpCli;
 
 class InstallationTest extends \Codeception\Test\Unit
 {
-    /**
-     * It should throw if the root directory does not exist
-     *
-     * @test
-     */
-    public function should_throw_if_the_root_directory_does_not_exist()
-    {
-        $this->expectException(\InvalidArgumentException::class);
-
-        new Installation(codecept_output_dir('foo/bar'));
-    }
+    use WithWpCli;
+    use WithSqliteDatabase;
 
     /**
      * It should allow creating an installation from a writeable dir
@@ -76,28 +68,20 @@ class InstallationTest extends \Codeception\Test\Unit
         $locale,
         $skipContent
     ) {
-        $core = $this->prophesize(\Core_Command::class);
-        $logger = new BufferLogger();
-
+        rrmdir($rootDir);
         $installation = new Installation($rootDir, $version, $locale, $skipContent);
-        $installation->setCoreCommand($core->reveal());
-        $installation->setWpCliLogger($logger);
         $installation->download();
 
-        $core->download([], [
-            'path' => $rootDir,
-            'locale' => $locale,
-            'version' => $version,
-            'skipContent' => $skipContent,
-            'force' => false
-        ])->shouldHaveBeenCalledOnce();
+        $this->assertFileExists($rootDir . '/wp-load.php');
+        $version = trim($this->setUpWpCli($rootDir)->executeWpCliCommand(['core', 'version'])->getOutput(), PHP_EOL);
+        $this->assertEquals($version, $installation->getVersion());
     }
 
     public function installationDownloadData()
     {
         return [
             'dir-one' => [codecept_output_dir('wp-installations/dir-one'), 'latest', 'en_US', true],
-            'dir-two' => [codecept_output_dir('wp-installations/dir-two'), '3.5', 'it_IT', false],
+            'dir-two' => [codecept_output_dir('wp-installations/dir-two'), '5.0', 'it_IT', false],
         ];
     }
 
@@ -110,7 +94,8 @@ class InstallationTest extends \Codeception\Test\Unit
                 'Test 1',
                 'luca',
                 'bar',
-                'luca@foo.com'
+                'luca@foo.com',
+                8888
             ],
             'dir-two' => [
                 codecept_output_dir('wp-installations/dir-two'),
@@ -118,7 +103,8 @@ class InstallationTest extends \Codeception\Test\Unit
                 'Test Site',
                 'admin',
                 'foo',
-                'admin@foo.bar'
+                'admin@foo.bar',
+                8889
             ],
         ];
     }
@@ -128,6 +114,7 @@ class InstallationTest extends \Codeception\Test\Unit
      *
      * @test
      * @dataProvider installationInstallationData
+     * @depends      should_download_the_specified_word_press_version_on_download
      */
     public function should_correctly_configure_and_install_the_installation(
         $rootDir,
@@ -137,24 +124,67 @@ class InstallationTest extends \Codeception\Test\Unit
         $adminPassword,
         $adminEmail
     ) {
-        $core = $this->prophesize(\Core_Command::class);
-        $logger = new BufferLogger();
-
         $installation = new Installation($rootDir);
-        $installation->setCoreCommand($core->reveal());
-        $installation->setWpCliLogger($logger);
+        $db = $this->createSqliteDatabase('database', $rootDir)->setInstallation($installation);
+
+        $installation->configure($db);
+
+        $this->assertTrue($installation->isConfigured());
 
         $installation->install($url, $title, $adminUser, $adminPassword, $adminEmail);
 
-        $core->install([], [
-            'path' => $rootDir,
-            'url' => $url,
-            'title' => $title,
-            'admin_user' => $adminUser,
-            'admin_password' => $adminPassword,
-            'admin_email'=>$adminEmail,
-            'skip-email' => true,
-        ])->shouldHaveBeenCalledOnce();
+        $this->assertTrue($installation->isInstalled());
+    }
+
+    /**
+     * It should allow serving an installation on localhost
+     *
+     * @test
+     * @depends      should_correctly_configure_and_install_the_installation
+     * @dataProvider installationInstallationData
+     */
+    public function should_allow_serving_an_installation_on_localhost(
+        $rootDir,
+        $url,
+        $title,
+        $adminUser,
+        $adminPassword,
+        $adminEmail,
+        $port
+    ) {
+        $installation = new Installation($rootDir);
+
+        $this->assertFalse($installation->getServerPort());
+        $this->assertFalse($installation->getServerUrl());
+        $this->assertFalse($installation->isBeingServed());
+
+        $url = $installation->serve($port);
+
+        $this->assertEquals($port, $installation->getServerPort());
+        $this->assertEquals("http://localhost:{$port}", $url);
+        $this->assertEquals("http://localhost:{$port}", $installation->getServerUrl());
+        $this->assertTrue($installation->isBeingServed());
+        $response = $this->requestUrl($installation);
+        $this->assertEquals(200, $response['http_code']);
+        $this->assertEquals($port, $response['primary_port']);
+
+        $installation->stopServing();
+
+        $this->assertFalse($installation->isBeingServed());
+        $this->assertFalse($installation->getServerPort());
+        $this->assertFalse($installation->getServerUrl());
+        $response = $this->requestUrl($installation);
+        $this->assertEquals(0, $response['http_code']);
+    }
+
+    protected function requestUrl(Installation $installation)
+    {
+        $request = curl_init($installation->getServerUrl());
+        curl_exec($request);
+        $response = curl_getinfo($request);
+        curl_close($request);
+
+        return $response;
     }
 
     protected function _before()

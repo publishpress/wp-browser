@@ -7,9 +7,7 @@ use Codeception\Exception\ModuleException;
 use Codeception\Lib\ModuleContainer;
 use org\bovigo\vfs\vfsStream;
 use org\bovigo\vfs\vfsStreamDirectory;
-use Prophecy\Argument;
 use tad\WPBrowser\Adapters\Process;
-use tad\WPBrowser\Environment\Executor;
 
 class WPCLITest extends \Codeception\Test\Unit
 {
