@@ -581,9 +581,9 @@ class WPLoader extends Module
             $this->_switchTheme();
         }
 
-//        if ($this->usingSqlite()) {
-//            $this->replaceWpdbWithSqliteInMemoryDatabase();
-//        }
+        if ($this->usingInMemorySqlite()) {
+            $this->replaceWpdbWithSqliteInMemoryDatabase();
+        }
     }
 
     /**
@@ -609,12 +609,11 @@ class WPLoader extends Module
             $this->debug("Creating SQLite database [{$sqliteDbFile}]");
             $this->sqliteDb = $this->createSqliteDatabase($sqliteDbFile);
             $this->sqliteDb->setInstallation($this->testInstallation);
-            register_shutdown_function([$this->sqliteDb, 'removeDropinFile']);
         } catch (SQLiteException $e) {
             throw new ModuleException($this, 'Error while creating SQLite database: ' . $e->getMessage());
         }
 
-        $this->addAction(Events::SUITE_AFTER, [$this, 'removeSqliteDropin']);
+        $this->addAction(Events::SUITE_AFTER, [$this->sqliteDb, 'removeDropinFile']);
     }
 
     /**
@@ -626,7 +625,7 @@ class WPLoader extends Module
     {
         $sqliteFileName = $this->config['useSqlite'];
 
-        if (!is_string($sqliteFileName)) {
+        if (!is_string($sqliteFileName) || $sqliteFileName === 'memory') {
             $sqliteFileName = $this->getSuiteName();
         }
 
@@ -737,10 +736,9 @@ class WPLoader extends Module
             );
         }
 
-        $inMemory = new Sqlite('sqlite::memory:', '', '');
-        $filePdo = new Sqlite('sqlite:' . FQDB, '', '');
-        Sqlite::dumpFromTo($filePdo, $inMemory);
+        $inMemory = Sqlite::fromFile(FQDB)->createMemoryVersion();
         $GLOBALS['@pdo'] = $inMemory->getDbh();
+        $this->sqliteDb = $inMemory;
     }
 
     public function _activatePlugins()
@@ -899,32 +897,6 @@ class WPLoader extends Module
     }
 
     /**
-     * Removes the SQLite database drop-in after the suite ran.
-     */
-    public function removeSqliteDropin()
-    {
-        if (!$this->testInstallation instanceof Installation) {
-            codecept_debug('SQLite drop-in file not removed: WPLoader module is not currently managing a ' .
-                'WordPress installation.');
-            return;
-        }
-
-        if (!$this->sqliteDb instanceof Sqlite) {
-            codecept_debug('SQLite drop-in file not removed: WPLoader module is not using a SQLite database.');
-            return;
-        }
-
-        $dropinFile = $this->sqliteDb->getDropinFilePath();
-        $this->debug("Removing SQLite file database drop-in file [{$dropinFile}]");
-
-        try {
-            $this->sqliteDb->removeDropinFile();
-        } catch (SQLiteException $e) {
-            $this->debug("SQLite database drop-in file could not be removed [{$dropinFile}].");
-        }
-    }
-
-    /**
      * Overrides the base implementation to filter the required configuration parameters.
      *
      * @throws ModuleConfigException If a require configuration parameter is missing or wrong.
@@ -975,5 +947,10 @@ class WPLoader extends Module
         }
 
         return true;
+    }
+
+    protected function usingInMemorySqlite()
+    {
+        return !empty($this->config['useSqlite']) && $this->config['useSqlite'] === 'memory';
     }
 }

@@ -169,10 +169,6 @@ class Sqlite extends \Codeception\Lib\Driver\Sqlite implements WordPressDatabase
         return $instance;
     }
 
-    public static function dumpFromTo(Sqlite $source, Sqlite $destination)
-    {
-    }
-
     /**
      * {@inheritDoc}
      */
@@ -280,6 +276,8 @@ class Sqlite extends \Codeception\Lib\Driver\Sqlite implements WordPressDatabase
     public function removeDropinFile()
     {
         $dropinFile = $this->getDropinFilePath();
+
+        codecept_debug("Removing SQLite database drop-in file [{$dropinFile}]");
 
         if (!file_exists($dropinFile)) {
             return false;
@@ -433,5 +431,73 @@ class Sqlite extends \Codeception\Lib\Driver\Sqlite implements WordPressDatabase
     public function isInMemory()
     {
         return $this->inMemory;
+    }
+
+    public function createMemoryVersion()
+    {
+        $memoryDb = new static('sqlite::memory:', '', '');
+
+        $creationSqlStmt = $this->dbh->query("SELECT sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'");
+        $creationSql = $creationSqlStmt->fetchAll(PDO::FETCH_COLUMN, 'sql');
+
+        if (count($creationSql) === 0) {
+            return $memoryDb;
+        }
+
+        $implodedCreationSql = implode(";\n", $creationSql) . ';';
+        $created = $memoryDb->dbh->exec($implodedCreationSql);
+
+        if ($created === false) {
+            $error = $memoryDb->dbh->errorInfo();
+            throw SQLiteException::becauseQueryFailed($implodedCreationSql, end($error));
+        }
+
+        $source = 'dump_' . static::$dumpCounter++;
+
+        $attachQuery = "ATTACH '{$this->filename}' AS {$source}";
+        $attached = $memoryDb->dbh->exec($attachQuery);
+
+        if ($attached === false) {
+            $error = $memoryDb->dbh->errorInfo();
+            throw SQLiteException::becauseQueryFailed($attachQuery, end($error));
+        }
+
+        $dbList = $memoryDb->dbh->query('pragma database_list');
+        if (count($dbList->fetchAll()) !== 2) {
+            throw SQLiteException::becauseFileAttachmentFailed($this->getName());
+        }
+
+        $tablesListQuery = "SELECT name FROM sqlite_master 
+            WHERE type='table' 
+            AND NAME NOT LIKE 'sqlite_%';";
+        $tablesList = $this->dbh->query($tablesListQuery);
+
+        if ($tablesList === false) {
+            $error = $this->dbh->errorInfo();
+            throw SQLiteException::becauseQueryFailed($tablesListQuery, end($error));
+        }
+
+        $tables = $tablesList->fetchAll(PDO::FETCH_COLUMN, 0);
+        $tablesPopulatedQuery = implode(";\n", array_map(static function ($table) use ($source) {
+                return "INSERT INTO main.{$table} SELECT * FROM {$source}.{$table}";
+        }, $tables)) . ';';
+
+        $tablesPopulated = $memoryDb->dbh->exec($tablesPopulatedQuery);
+
+        if ($tablesPopulated === false) {
+            $error = $memoryDb->dbh->errorInfo();
+            throw SQLiteException::becauseQueryFailed($tablesPopulatedQuery, end($error));
+        }
+
+        $detached = $memoryDb->dbh->exec("DETACH DATABASE {$source}");
+
+        if ($detached === false) {
+            $error = $memoryDb->dbh->errorInfo();
+            throw SQLiteException::becauseFileDetachmentFailed(end($error));
+        }
+
+        codecept_debug("SQLite memory database generated from [{$this->getName()}]");
+
+        return $memoryDb;
     }
 }
