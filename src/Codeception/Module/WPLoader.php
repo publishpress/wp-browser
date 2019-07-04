@@ -556,7 +556,7 @@ class WPLoader extends Module
     {
         $this->testInstallation = new Installation($this->wpRootFolder);
 
-        if ($this->usingSqlite()) {
+        if ($this->_isUsingSqlite()) {
             $this->prepareSqliteDatabase();
         }
 
@@ -581,7 +581,7 @@ class WPLoader extends Module
             $this->_switchTheme();
         }
 
-        if ($this->usingInMemorySqlite()) {
+        if ($this->_isUsingInMemorySqlite()) {
             $this->replaceWpdbWithSqliteInMemoryDatabase();
         }
     }
@@ -591,7 +591,7 @@ class WPLoader extends Module
      *
      * @return bool Whether the module is configured to use SQLite database or not.
      */
-    protected function usingSqlite()
+    public function _isUsingSqlite()
     {
         return isset($this->config['useSqlite']);
     }
@@ -905,7 +905,7 @@ class WPLoader extends Module
     protected function validateConfig()
     {
         $this->ensureWPRoot($this->getWpRootFolder());
-        if ($this->usingSqlite()) {
+        if ($this->_isUsingSqlite()) {
             $remove = [
                 'dbName',
                 'dbHost',
@@ -935,7 +935,7 @@ class WPLoader extends Module
      */
     protected function ensureWPRoot($wpRootFolder, $throw = true)
     {
-        if (!file_exists($wpRootFolder . DIRECTORY_SEPARATOR . 'wp-settings.php')) {
+        if (!file_exists($wpRootFolder . DIRECTORY_SEPARATOR . 'wp-load.php')) {
             if (!$throw) {
                 return false;
             }
@@ -949,7 +949,12 @@ class WPLoader extends Module
         return true;
     }
 
-    protected function usingInMemorySqlite()
+    /**
+     * Returns whether the module is using SQLite in-memory database or not.
+     *
+     * @return bool Whether the module is using SQLite in-memory database or not.
+     */
+    public function _isUsingInMemorySqlite()
     {
         return !empty($this->config['useSqlite']) && $this->config['useSqlite'] === 'memory';
     }

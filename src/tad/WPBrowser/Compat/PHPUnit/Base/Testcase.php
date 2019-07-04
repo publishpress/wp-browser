@@ -16,6 +16,7 @@ use Codeception\TestCase\WPTestCase;
  * Class Testcase
  *
  * @package tad\WPBrowser\Compat\PHPUnit
+ * @codeCoverageIgnore
  */
 class Testcase extends \Codeception\PHPUnit\TestCase
 {

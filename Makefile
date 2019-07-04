@@ -30,6 +30,7 @@ PROJECT := $(shell basename ${CURDIR})
 	ci_script \
 	pre_commit \
 	clean_wp_installations \
+	clean_dependencies \
 	require_codeception_2.5 \
 	require_codeception_3
 
@@ -75,10 +76,18 @@ lint: docker/parallel-lint/id
 		/app/src
 
 cs_sniff:
-	vendor/bin/phpcs --colors -p --standard=phpcs.xml $(SRC) --ignore=src/data,src/includes,src/tad/scripts,src/tad/WPBrowser/Compat -s src
+	vendor/bin/phpcs --colors -p \
+		--standard=phpcs.xml $(SRC) \
+		--ignore=src/data,src/includes,src/tad/scripts,src/tad/WPBrowser/Compat \
+		-s \
+		src
 
 cs_fix:
-	vendor/bin/phpcbf --colors -p --standard=phpcs.xml $(SRC) --ignore=src/data,src/includes,src/tad/scripts -s src tests
+	vendor/bin/phpcbf --colors -p \
+		--standard=phpcs.xml $(SRC) \
+		--ignore=src/data,src/includes,src/tad/scripts,tests/_output \
+		-s \
+		src tests
 
 cs_fix_n_sniff: cs_fix cs_sniff
 
@@ -191,7 +200,7 @@ ensure_pingable_hosts:
 
 ci_prepare: ci_before_install ensure_pingable_hosts ci_install ci_before_script
 
-ci_local_prepare: sync_hosts_entries ci_before_install ensure_pingable_hosts ci_install ci_before_script
+ci_local_prepare: sync_hosts_entries clean_dependencies ci_before_install ensure_pingable_hosts ci_install ci_before_script
 
 ci_run: lint sniff ci_prepare ci_script
 
@@ -271,6 +280,9 @@ pre_commit: lint cs_sniff
 clean_wp_installations:
 	rm -rf tests/_output/wp-installations
 	rm -rf tests/_output/installations
+
+clean_dependencies:
+	rm -rf composer.lock vendor/codeception vendor/phpunit vendor/sebastian
 
 require_codeception_2.5:
 	rm -rf composer.lock vendor/codeception vendor/phpunit vendor/sebastian \

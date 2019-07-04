@@ -1,10 +1,17 @@
 <?php
+
 namespace tad\WPBrowser\Module\Connector;
 
+use Codeception\Exception\ModuleException;
 use org\bovigo\vfs\vfsStream;
 use org\bovigo\vfs\vfsStreamDirectory;
+use Prophecy\Argument;
+use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\BrowserKit\CookieJar;
 use Symfony\Component\BrowserKit\History;
+use Symfony\Component\BrowserKit\Request;
+use Symfony\Component\BrowserKit\Response;
+use tad\WPBrowser\Adapters\Process;
 use tad\WPBrowser\Connector\WordPress;
 use tad\WPBrowser\Module\Support\UriToIndexMapper;
 
@@ -162,6 +169,107 @@ class WordPressTest extends \Codeception\Test\Unit
         $this->assertEquals($this->root->url() . '/some-index.php', $sut->getIndex());
     }
 
+    /**
+     * It should return the mock response if set
+     *
+     * @test
+     */
+    public function should_return_the_mock_response_if_set()
+    {
+        $request = $this->prophesize(Request::class);
+        $request->getCookies()->shouldNotBeCalled();
+        $process = $this->prophesize(Process::class);
+        $process->forCommand(Argument::any())->shouldNotBeCalled();
+
+        $connector = $this->make_instance();
+        $connector->mockResponse('foo');
+        $response = $connector->doRequestInProcess($request->reveal(), $process->reveal());
+
+        $this->assertEquals('foo', $response);
+    }
+
+    /**
+     * It should correctly process GET request
+     *
+     * @test
+     */
+    public function should_correctly_process_get_request()
+    {
+        $this->uriToIndexMapper->getIndexForUri('/test/?foo=1')->willReturn('/test/?foo=1');
+        $request = new Request('/test/?foo=1', 'GET', ['foo' => 'bar']);
+        $processes = $this->prophesize(Process::class);
+        $process = $this->prophesize(\Symfony\Component\Process\Process::class);
+        $process->run()->willReturn(0);
+        $process->getOutput()->willReturn(base64_encode(serialize([
+            'content' => 'test test test',
+            'headers' => ['ContentType' => 'application/json', 'Host' => 'https://foo.test/path'],
+            'server' => ['lorem' => 'dolor'],
+            'status' => 200
+        ])));
+        $scriptFile = codecept_root_dir('src/tad/scripts/request.php');
+        // To force a reset during the request.
+        unset($_FILES);
+
+        $processes->forCommand(Argument::allOf(
+            Argument::containingString('/test'),
+            Argument::containingString($scriptFile)
+        ))->willReturn($process->reveal());
+
+        $connector = $this->make_instance();
+        $connector->setUrl('https://foo.test');
+        $response = $connector->doRequestInProcess($request, $processes->reveal());
+
+        $this->assertInstanceOf(Response::class, $response);
+        $this->assertEquals('test test test', $response->getContent());
+        $this->assertEquals(['ContentType' => 'application/json', 'Host' => '/path'], $response->getHeaders());
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertEquals('dolor', $_SERVER['lorem']);
+    }
+
+    /**
+     * It should throw a module exception if response is empty
+     *
+     * @test
+     */
+    public function should_throw_a_module_exception_if_response_is_empty()
+    {
+        $this->uriToIndexMapper->getIndexForUri('/test')->willReturn('/test');
+        $request = new Request('/test', 'GET', ['foo' => 'bar']);
+        $processes = $this->prophesize(Process::class);
+        $process = $this->prophesize(\Symfony\Component\Process\Process::class);
+        $process->run()->willReturn(0);
+        $process->getOutput()->willReturn(null);
+        $scriptFile = codecept_root_dir('src/tad/scripts/request.php');
+        $processes->forCommand(Argument::allOf(
+            Argument::containingString('/test'),
+            Argument::containingString($scriptFile)
+        ))->willReturn($process->reveal());
+
+        $this->expectException(ModuleException::class);
+
+        $connector = $this->make_instance();
+        $connector->doRequestInProcess($request, $processes->reveal());
+    }
+
+    /**
+     * It should allow resetting cookies
+     *
+     * @test
+     */
+    public function should_allow_resetting_cookies()
+    {
+        $cookieJar = new CookieJar();
+        $cookieJar->set(Cookie::fromString('One=23'));
+        $connector = new WordPress([], null, $cookieJar);
+
+        $this->assertSame($cookieJar, $connector->getCookieJar());
+
+        $connector->resetCookies();
+
+        $this->assertNotSame($cookieJar, $connector->getCookieJar());
+        $this->assertInstanceOf(CookieJar::class, $connector->getCookieJar());
+    }
+
     protected function _before()
     {
         $this->server = [];
@@ -170,9 +278,5 @@ class WordPressTest extends \Codeception\Test\Unit
         $this->uriToIndexMapper = $this->prophesize(UriToIndexMapper::class);
 
         $this->root = vfsStream::setup();
-    }
-
-    protected function _after()
-    {
     }
 }

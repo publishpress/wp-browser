@@ -1,4 +1,5 @@
 <?php
+
 namespace PHPDocsMD;
 
 /**
@@ -8,6 +9,7 @@ namespace PHPDocsMD;
  * not return a title.
  *
  * @package PHPDocsMD
+ * @codeCoverageIgnore
  */
 class ClassEntity extends CodeEntity
 {

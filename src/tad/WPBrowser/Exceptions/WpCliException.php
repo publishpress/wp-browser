@@ -72,4 +72,33 @@ class WpCliException extends \Exception
             . ' did you call the `setUpWpCli` method first?'
         );
     }
+
+    /**
+     * Builds and returns an exception to indicate the wp-cli `\Server_Command` class was not be found..
+     *
+     * @return WpCliException The built exception.
+     */
+    public static function becauseServerCommandClassWasNotFound()
+    {
+        return new static(
+            'The `\Server_Command` class could not be loaded or does not exist:'
+            . ' did you add the `wp-cli/server-command` package as a Composer requirement?' .
+            'Did you run `composer dump-autoload` to solve autoload file issues?'
+        );
+    }
+
+    /**
+     * Builds and returns an exception to indicate the wp-cli server router file was not be found.
+     *
+     * @param string $routerFile The path to the presumed router file location.
+     *
+     * @return WpCliException The built exception.
+     */
+    public static function becauseRouterFileWasNotFound($routerFile)
+    {
+        return new static(
+            "wp-cli server router file was not found [$routerFile]: did you add the `wp-cli/server-command`" .
+            ' package to Composer dependencies?'
+        );
+    }
 }

@@ -56,11 +56,6 @@ class InstallationTest extends \Codeception\Test\Unit
      *
      * @test
      * @dataProvider installationDownloadData
-     *
-     * @param $rootDir
-     * @param $version
-     * @param $locale
-     * @param $skipContent
      */
     public function should_download_the_specified_word_press_version_on_download(
         $rootDir,
@@ -154,6 +149,17 @@ class InstallationTest extends \Codeception\Test\Unit
     ) {
         $installation = new Installation($rootDir);
 
+        if ($rootDir ===  codecept_output_dir('wp-installations/dir-one')) {
+            // Make sure the installation has a theme.
+            $themeInstall = $installation->cli(['theme', 'install', 'twentyseventeen', '--activate']);
+            if ($themeInstall->getErrorOutput()) {
+                throw new \RuntimeException(
+                    'Failed installing twentyseventeen theme: '
+                    . $themeInstall->getErrorOutput()
+                );
+            }
+        }
+
         $this->assertFalse($installation->getServerPort());
         $this->assertFalse($installation->getServerUrl());
         $this->assertFalse($installation->isBeingServed());
@@ -180,8 +186,11 @@ class InstallationTest extends \Codeception\Test\Unit
     protected function requestUrl(Installation $installation)
     {
         $request = curl_init($installation->getServerUrl());
-        curl_exec($request);
+        curl_setopt($request, CURLOPT_RETURNTRANSFER, true);
+        $content = curl_exec($request);
         $response = curl_getinfo($request);
+        $response['content'] = $content;
+
         curl_close($request);
 
         return $response;

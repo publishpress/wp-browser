@@ -13,6 +13,7 @@ namespace tad\WPBrowser\Compat\PHPUnit;
  * Class Testcase
  *
  * @package tad\WPBrowser\Compat\PHPUnit
+ * @codeCoverageIgnore
  */
 class Testcase extends \Codeception\PHPUnit\TestCase
 {

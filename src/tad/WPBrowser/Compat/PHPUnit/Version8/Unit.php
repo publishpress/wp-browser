@@ -11,6 +11,7 @@ namespace tad\WPBrowser\Compat\Codeception;
 /**
  * Class Unit
  * @package tad\WPBrowser\Compat\Codeception
+ * @codeCoverageIgnore
  */
 class Unit extends \Codeception\Test\Unit
 {

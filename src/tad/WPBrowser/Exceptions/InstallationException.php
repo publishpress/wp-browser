@@ -90,16 +90,17 @@ class InstallationException extends \Exception
      * Builds and returns an exception to indicate an installation cannot be served.
      *
      * @param Installation $installation The installation object.
-     * @param Process      $serveProcess The wp-cli server process.
+     * @param string      $reason The reason for the server process failure.
      *
      * @return InstallationException The built exception.
      */
-    public static function becauseInstallationCannotBeServed(Installation $installation, Process $serveProcess)
+    public static function becauseInstallationCannotBeServed(Installation $installation, $reason)
     {
         return new static(sprintf(
-            'Cannot serve the installation from docroot [%s] at URL [%s])',
+            'Cannot serve the installation from docroot [%s] at URL [%s]: %s',
             $installation->getRootDir(),
-            $installation->getServerUrl()
+            $installation->getServerUrl(),
+            $reason
         ));
     }
 }

@@ -8,8 +8,9 @@ use Symfony\Component\BrowserKit\CookieJar;
 use Symfony\Component\BrowserKit\History;
 use Symfony\Component\BrowserKit\Request;
 use Symfony\Component\BrowserKit\Response;
-use Symfony\Component\Process\Process;
+use tad\WPBrowser\Adapters\Process as Processes;
 use tad\WPBrowser\Module\Support\UriToIndexMapper;
+use tad\WPBrowser\Utils;
 
 class WordPress extends Universal
 {
@@ -53,11 +54,15 @@ class WordPress extends Universal
     }
 
     /**
-     * @param Request $request
+     * Performs the request in a separate process.
      *
-     * @return Response
+     * @param Request        $request The request to perform.
+     * @param Processes|null $processes Either the Process adapter or `null` to build it in the method.
+     *
+     * @return Response The request response.
+     * @throws ModuleException If the response unserialization fails.
      */
-    public function doRequestInProcess($request)
+    public function doRequestInProcess($request, Processes $processes = null)
     {
         if ($this->mockedResponse) {
             $response = $this->mockedResponse;
@@ -65,14 +70,16 @@ class WordPress extends Universal
             return $response;
         }
 
+        $processes = $processes ?: new Processes();
+
         $requestCookie = $request->getCookies();
         $requestServer = $request->getServer();
         $requestFiles = $this->remapFiles($request->getFiles());
 
         $parseResult = parse_url($request->getUri());
-        $uri = $parseResult["path"];
-        if (array_key_exists("query", $parseResult)) {
-            $uri .= "?" . $parseResult["query"];
+        $uri = $parseResult['path'];
+        if (array_key_exists('query', $parseResult)) {
+            $uri .= '?' . $parseResult['query'];
         }
 
         $requestRequestArray = $this->remapRequestParameters($request->getParameters());
@@ -86,8 +93,7 @@ class WordPress extends Universal
 
         $this->index = $this->uriToIndexMapper->getIndexForUri($uri);
 
-        $phpSelf = str_replace($this->rootFolder, '', $this->index);
-        $requestServer['PHP_SELF'] = $phpSelf;
+        $requestServer['PHP_SELF'] = str_replace($this->rootFolder, '', $this->index);
 
         $env = [
             'headers' => $this->headers,
@@ -97,11 +103,8 @@ class WordPress extends Universal
             'request' => $requestRequestArray,
         ];
 
-        if (strtoupper($request->getMethod()) == 'GET') {
-            $env['get'] = $env['request'];
-        } else {
-            $env['post'] = $env['request'];
-        }
+        $requestMethod = $request->getMethod() === 'GET' ? 'get' : 'post';
+        $env[$requestMethod] = $env['request'];
 
         $requestScript = dirname(dirname(__DIR__)) . '/scripts/request.php';
 
@@ -110,10 +113,11 @@ class WordPress extends Universal
             ' ' . escapeshellarg($this->index) .
             ' ' . escapeshellarg(base64_encode(serialize($env)));
 
-        $process = new Process($command);
+        $process = $processes->forCommand($command);
         $process->run();
         $rawProcessOutput = $process->getOutput();
 
+        /** @noinspection UnserializeExploitsInspection */
         $unserializedResponse = @unserialize(base64_decode($rawProcessOutput));
 
         if (false === $unserializedResponse) {
@@ -121,35 +125,22 @@ class WordPress extends Universal
             throw new ModuleException(\Codeception\Module\WordPress::class, $message);
         }
 
-        $_SERVER = empty($unserializedResponse['server']) ? [] : $unserializedResponse['server'];
-        $_FILES = empty($unserializedResponse['files']) ? [] : $unserializedResponse['files'];
-        $_REQUEST = empty($unserializedResponse['request']) ? [] : $unserializedResponse['request'];
-        $_GET = empty($unserializedResponse['get']) ? [] : $unserializedResponse['get'];
-        $_POST = empty($unserializedResponse['post']) ? [] : $unserializedResponse['post'];
+        foreach (['server', 'files', 'request', 'get', 'post'] as $key) {
+            if (empty($unserializedResponse[$key])) {
+                continue;
+            }
+            $superGlobal = '_' . strtoupper($key);
+            $GLOBALS[$superGlobal] = isset($GLOBALS[$superGlobal]) ?
+                /** @noinspection SlowArrayOperationsInLoopInspection */
+                array_merge($GLOBALS[$superGlobal], $unserializedResponse[$key]) : $unserializedResponse[$key];
+        }
 
         $content = $unserializedResponse['content'];
-        $headers = $this->replaceSiteUrlDeep($unserializedResponse['headers'], $this->url);
+        $headers = Utils\Str::replaceRecursive($this->url, '', $unserializedResponse['headers']);
 
         $response = new Response($content, $unserializedResponse['status'], $headers);
 
         return $response;
-    }
-
-    private function replaceSiteUrlDeep($array, $url)
-    {
-        if (empty($array)) {
-            return [];
-        }
-        $replaced = [];
-        foreach ($array as $key => $value) {
-            if (is_array($value)) {
-                $replaced[$key] = $this->replaceSiteUrlDeep($value, $url);
-            } else {
-                $replaced[$key] = str_replace(urlencode($url), urldecode(''), str_replace($url, '', $value));
-            }
-        }
-
-        return $replaced;
     }
 
     public function setUrl($url)

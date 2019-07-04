@@ -247,23 +247,71 @@ trait WithWpCli
     /**
      * Executes a wp-cli command asynchronously.
      *
-     * @param array $command The command fragments; a mix of arguments and options.
+     * @param array              $command       The command fragments; a mix of arguments and options.
+     * @param callable|int|float $sleepOrVerify A callback to use to verify if the process is correctly running or not;
+     *                                          the callback will receive the Symfony Process instance as argument;
+     *                                          the callback should return falsy or truthy values; the code will wait
+     *                                          50ms after each failed verification.
+     *                                          If a numeric value is, instead, provided then the code will `sleep` for
+     *                                          that amount after starting the process.
      *
      * @return \Symfony\Component\Process\Process The process object that is handling the command execution.
      * @throws WpCliException If wp-cli has not been set up first.
      */
-    protected function executeBackgroundWpCliCommand(array $command)
+    protected function executeBackgroundWpCliCommand(array $command, $sleepOrVerify = null)
     {
         $fullCommand = $this->buildFullCommand($command);
         $process = $this->wpCliProcess->forCommand($fullCommand, $this->wpCliWpRootDir);
         $process->setTimeout(null);
 
+        // Whatever happens let's make sure any background process is killed at shutdown.
+        register_shutdown_function(static function () use ($process) {
+            if ($process->isRunning()) {
+                $process->stop();
+            }
+        });
+
         try {
             $process->start();
         } catch (\Exception $e) {
             codecept_debug('WPCLI background process failed: ' . $e->getMessage());
+            if ($process->isRunning()) {
+                $process->stop();
+            }
+            return $process;
+        }
+
+        if (is_callable($sleepOrVerify)) {
+            while (!$sleepOrVerify($process)) {
+                codecept_debug('WPCLI background process verification failed, sleeping 50ms.');
+                usleep(50000);
+            }
+        } elseif (is_numeric($sleepOrVerify)) {
+            codecept_debug("Sleeping {$sleepOrVerify}s after WPCLI background process started...");
+            sleep((float)$sleepOrVerify);
         }
 
         return $process;
+    }
+
+    /**
+     * Returns the absolute path to the wp-cli server command router file, part of the `wp-cli/server-command` package.
+     *
+     * @return string The absolute path to the wp-cli server command router file.
+     * @throws WpCliException If the `\Server_Command` class cannot  be autoloaded or the router file was not found.
+     */
+    protected function getWpCliRouterFilePath()
+    {
+        try {
+            $serverCommandFile = (new \ReflectionClass(\Server_Command::class))->getFileName();
+            $routerFilePath = dirname(dirname($serverCommandFile)) . '/router.php';
+            if (!file_exists($routerFilePath)) {
+                throw WpCliException::becauseRouterFileWasNotFound($routerFilePath);
+            }
+        } catch (\ReflectionException $e) {
+            throw WpCliException::becauseServerCommandClassWasNotFound();
+        }
+
+        return $routerFilePath;
     }
 }

@@ -181,10 +181,13 @@ class WPLoaderTest extends \Codeception\Test\Unit
         );
         $this->config = [
             'wpRootFolder' => $installation->getRootDir(),
-            'useSqlite' => $installation->getDatabase()->getName()
+            'useSqlite' => true
         ];
 
         $module = $this->make_instance();
+
+        $this->assertTrue($module->_isUsingSqlite());
+        $this->assertFalse($module->_isUsingInMemorySqlite());
     }
 
     protected function _before()

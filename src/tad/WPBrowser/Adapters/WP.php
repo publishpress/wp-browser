@@ -7,11 +7,11 @@
 
 namespace tad\WPBrowser\Adapters;
 
-use tad\WPBrowser\Traits\WPHealthcheck;
-
 /**
  * Class WP
+ *
  * @package tad\WPBrowser\Adapters
+ * @codeCoverageIgnore
  */
 class WP
 {

@@ -17,6 +17,7 @@ use RuntimeException;
  * Class TableGenerator
  *
  * @package tad\WPBrowser\Documentation
+ * @codeCoverageIgnore
  */
 class TableGenerator implements \PHPDocsMD\TableGenerator
 {

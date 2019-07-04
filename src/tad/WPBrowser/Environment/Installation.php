@@ -7,11 +7,16 @@
 
 namespace tad\WPBrowser\Environment;
 
+use GuzzleHttp\Exception\ConnectException;
+use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
 use tad\WPBrowser\Exceptions\InstallationException;
+use tad\WPBrowser\Exceptions\ProcessException;
 use tad\WPBrowser\Exceptions\WpCliException;
 use tad\WPBrowser\Interfaces\WordPressDatabaseInterface;
 use tad\WPBrowser\Traits\WithFaker;
+use tad\WPBrowser\Traits\WithHTTPRequests;
+use tad\WPBrowser\Traits\WithProcesses;
 use tad\WPBrowser\Traits\WithWpCli;
 
 /**
@@ -23,6 +28,8 @@ class Installation
 {
     use WithWpCli;
     use WithFaker;
+    use WithProcesses;
+    use WithHTTPRequests;
 
     /**
      * The absolute path to the installation root directory.
@@ -30,6 +37,7 @@ class Installation
      * @var string
      */
     protected $rootDir;
+
     /**
      * The WordPress version requested in the object constructor. Differently from the `$wpVersion` property this might
      * be an alias, like `latest`.
@@ -247,13 +255,16 @@ class Installation
         $this->rootDir = rtrim($rootDir, '/\\');
         $this->requestVersion = $version;
         $this->locale = $locale;
-        $this->skipContent = $skipContent;
+        $this->skipContent = (bool)$skipContent;
     }
 
     /**
+     * Downloads the WordPress version specified by the installation settings in the installation root directory.
      *
+     * @return $this This object.
      *
-     * @return $this
+     * @throws InstallationException If the download process fails at any step.
+     * @throws WpCliException If the `core download` command building fails.
      */
     public function download()
     {
@@ -509,9 +520,14 @@ class Installation
      */
     public function serve($port = 8080)
     {
+        if ($this->isBeingServed()) {
+            return $this->serverUrl;
+        }
+
         $this->setUpWpCli($this->getRootDir());
 
-        $this->serverUrl = "http://{$this->localhostAddress}:{$port}";
+        $serverUrl = "http://{$this->localhostAddress}:{$port}";
+        $this->serverUrl = $serverUrl;
         $this->serverPort = $port;
 
         if (!$this->serverUrl !== $this->url) {
@@ -521,18 +537,39 @@ class Installation
             codecept_debug(sprintf('Installation URL changed to [%s]', $this->serverUrl));
         }
 
-        $command = array_merge(['server'], $this->wpCliOptions([
-            'host' => $this->defaultServerHost,
-            'port' => $port,
-            'docroot' => $this->rootDir,
-        ]));
+        $serverCommand = [
+            (new PhpExecutableFinder)->find(),
+            '-S',
+            "{$this->defaultServerHost}:{$port}",
+            '-t',
+            $this->getRootDir(),
+            $this->getWpCliRouterFilePath(),
+        ];
 
-        codecept_debug('Serving WordPress with command: ' . json_encode($command));
+        codecept_debug('Serving WordPress with command: ' . json_encode($serverCommand));
 
-        $serve = $this->executeBackgroundWpCliCommand($command);
+        $this->setHttpRequestsRootUrl($serverUrl);
+        $isServerRunning = function () {
+            static $tries;
+            $tries = (int)$tries++;
 
-        if (!$serve->isStarted()) {
-            throw InstallationException::becauseInstallationCannotBeServed($this, $serve);
+            if ($tries > 10) {
+                throw InstallationException::becauseInstallationCannotBeServed($this, 'Server failed to start.');
+            }
+
+            try {
+                $response = $this->requestHead('/')->wait();
+            } catch (ConnectException $e) {
+                return false;
+            }
+
+            return $response->getStatusCode() === 200;
+        };
+
+        try {
+            $serve = $this->executeBackgroundProcess($serverCommand, $this->getRootDir(), $isServerRunning);
+        } catch (ProcessException $e) {
+            throw InstallationException::becauseInstallationCannotBeServed($this, $e->getMessage());
         }
 
         codecept_debug('Server process PID: ' . $serve->getPid());
@@ -580,6 +617,7 @@ class Installation
 
         codecept_debug("Installation wp-cli server process (PID: {$pid}) stopped.");
 
+        $this->isBeingServed = false;
         $this->serverUrl = false;
         $this->serverPort = false;
     }
@@ -592,5 +630,25 @@ class Installation
     public function getDatabase()
     {
         return $this->wordPressDatabase;
+    }
+
+    /**
+     * Executes a wp-cli command in the installation and returns the resulting process.
+     *
+     * @param array $command The command to execute.
+     * @param int   $timeout The command execution timeout.
+     *
+     * @return Process The process running the wp-cli command.
+     * @throws WpCliException If there's an issue building, or running, the command.
+     */
+    public function cli(array $command = ['version'], $timeout = 60)
+    {
+        codecept_debug(
+            "Executing wp-cli command on installation [{$this->getRootDir()}]: "
+            . json_encode($command)
+        );
+        $this->setUpWpCli($this->getRootDir());
+
+        return $this->executeWpCliCommand($command, $timeout);
     }
 }
