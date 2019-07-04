@@ -103,4 +103,21 @@ class InstallationException extends \Exception
             $reason
         ));
     }
+
+    /**
+     * Builds and returns an exception to indicate an installation cannot be served on a port as alraedy occupied.
+     *
+     * @param Installation $installation The installation object.
+     * @param int      $port The unavailable port.
+     *
+     * @return InstallationException The built exception.
+     */
+    public static function becauseInstallationCannotBeServedOnOccupiedPort(Installation $installation, $port)
+    {
+        return new static(sprintf(
+            'Cannot serve the installation from docroot [%s] on port [%d] as it is already used.',
+            $installation->getRootDir(),
+            $port
+        ));
+    }
 }

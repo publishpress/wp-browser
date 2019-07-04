@@ -283,7 +283,7 @@ trait WithWpCli
 
         if (is_callable($sleepOrVerify)) {
             while (!$sleepOrVerify($process)) {
-                codecept_debug('WPCLI background process verification failed, sleeping 50ms.');
+                codecept_debug('WPCLI background process not ready yet, sleeping 50ms...');
                 usleep(50000);
             }
         } elseif (is_numeric($sleepOrVerify)) {

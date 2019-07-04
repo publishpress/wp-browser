@@ -32,6 +32,19 @@ class Installation
     use WithHTTPRequests;
 
     /**
+     * The current last used localhost port.
+     *
+     * @var int
+     */
+    protected static $lastServerPort = 8090;
+    /**
+     * Stores, on a per-request level, the used localhost port numbers.
+     *
+     * @var array
+     */
+    protected static $usedLocalhostPorts = [];
+
+    /**
      * The absolute path to the installation root directory.
      *
      * @var string
@@ -489,16 +502,6 @@ class Installation
     }
 
     /**
-     * Returns whether the installation is currently being served or not.
-     *
-     * return bool Whether the installation is currently being served or not.
-     */
-    public function isBeingServed()
-    {
-        return $this->isBeingServed;
-    }
-
-    /**
      * Returns the localhost port the installation is being served on.
      *
      * @return bool|int The localhost port the installation is being served on, or `false` if the installation is not
@@ -515,11 +518,19 @@ class Installation
      * @param int $port The localhost port to serve the installation on.
      *
      * @return string The URL where the installation is being served.
-     * @throws InstallationException If the server command fails.
+     * @throws InstallationException If the server command fails or the specified port is not available.
      * @throws WpCliException If there's an issue while setting up the wp-cli executable.
      */
-    public function serve($port = 8080)
+    public function serve($port = null)
     {
+        if ($port !== null) {
+            if ($this->verifyLocalhostPortIsAvailable($port) === false) {
+                throw InstallationException::becauseInstallationCannotBeServedOnOccupiedPort($this, $port);
+            }
+        } else {
+            $port = $this->findAvailableServerPort($port);
+        }
+
         if ($this->isBeingServed()) {
             return $this->serverUrl;
         }
@@ -549,9 +560,47 @@ class Installation
         codecept_debug('Serving WordPress with command: ' . json_encode($serverCommand));
 
         $this->setHttpRequestsRootUrl($serverUrl);
-        $isServerRunning = function () {
+        try {
+            $serve = $this->executeBackgroundProcess(
+                $serverCommand,
+                $this->getRootDir(),
+                $this->isServerRunningCheck()
+            );
+        } catch (ProcessException $e) {
+            throw InstallationException::becauseInstallationCannotBeServed($this, $e->getMessage());
+        }
+
+        codecept_debug('Server process PID: ' . $serve->getPid());
+
+        $this->isBeingServed = true;
+        $this->serverProcess = $serve;
+
+        static::$usedLocalhostPorts[] = $port;
+
+        return $this->serverUrl;
+    }
+
+    /**
+     * Returns whether the installation is currently being served or not.
+     *
+     * return bool Whether the installation is currently being served or not.
+     */
+    public function isBeingServed()
+    {
+        return $this->isBeingServed;
+    }
+
+    /**
+     * Returns a closure to check if the built-in server is running.
+     *
+     * @return \Closure The closure that will check, using methods from the `WithHttpRequests` trait, if the built-in
+     *                  server serving the installation is running or not.
+     */
+    protected function isServerRunningCheck()
+    {
+        return function () {
             static $tries;
-            $tries = (int)$tries++;
+            $tries = null === $tries ? 1 : $tries++;
 
             if ($tries > 10) {
                 throw InstallationException::becauseInstallationCannotBeServed($this, 'Server failed to start.');
@@ -565,19 +614,6 @@ class Installation
 
             return $response->getStatusCode() === 200;
         };
-
-        try {
-            $serve = $this->executeBackgroundProcess($serverCommand, $this->getRootDir(), $isServerRunning);
-        } catch (ProcessException $e) {
-            throw InstallationException::becauseInstallationCannotBeServed($this, $e->getMessage());
-        }
-
-        codecept_debug('Server process PID: ' . $serve->getPid());
-
-        $this->isBeingServed = true;
-        $this->serverProcess = $serve;
-
-        return $this->serverUrl;
     }
 
     /**
@@ -602,12 +638,13 @@ class Installation
         if (!($this->serverProcess instanceof Process && $this->serverProcess->isRunning())) {
             $this->isBeingServed = false;
             $this->serverUrl = false;
+            static::$usedLocalhostPorts = array_diff(static::$usedLocalhostPorts, [$this->serverPort]);
             $this->serverPort = false;
             return;
         }
 
         $pid = $this->serverProcess->getPid();
-        codecept_debug("Stopping installation wp-cli server process (PID: {$pid})...");
+        codecept_debug("Stopping installation server process (PID: {$pid})...");
 
         $this->serverProcess->stop();
 
@@ -615,10 +652,11 @@ class Installation
             throw  WpCliException::becauseACommandFailed($this->serverProcess);
         }
 
-        codecept_debug("Installation wp-cli server process (PID: {$pid}) stopped.");
+        codecept_debug("Installation server process (PID: {$pid}) stopped.");
 
         $this->isBeingServed = false;
         $this->serverUrl = false;
+        static::$usedLocalhostPorts = array_diff(static::$usedLocalhostPorts, [$this->serverPort]);
         $this->serverPort = false;
     }
 
@@ -650,5 +688,52 @@ class Installation
         $this->setUpWpCli($this->getRootDir());
 
         return $this->executeWpCliCommand($command, $timeout);
+    }
+
+    /**
+     * Finds and returns the first available localhost port.
+     *
+     * @return \Generator The first available localhost port.
+     */
+    protected function findAvailableServerPort()
+    {
+        while ($port = static::$lastServerPort++) {
+            try {
+                if (in_array($port, static::$usedLocalhostPorts, true)) {
+                    continue;
+                }
+                $this->verifyLocalhostPortIsAvailable($port);
+                yield $port;
+            } catch (InstallationException $e) {
+                // Continue.
+            }
+        }
+    }
+
+    /**
+     *
+     * Verifies a localhost port is available and not currently in use.
+     *
+     * @noinspection PhpDocMissingThrowsInspection
+     *
+     * @param int $port The localhost port to verify.
+     *
+     * @return bool Whether the localhost port is available or not.
+     */
+    protected function verifyLocalhostPortIsAvailable($port)
+    {
+        if (in_array($port, static::$usedLocalhostPorts, true)) {
+            return false;
+        }
+
+        $serverUrl = "http://{$this->localhostAddress}:{$port}";
+
+        try {
+            $this->requestHead($serverUrl)->wait();
+        } catch (ConnectException $e) {
+            return true;
+        }
+
+        return false;
     }
 }

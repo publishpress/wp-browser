@@ -53,11 +53,11 @@ trait WithProcesses
 
         if (is_callable($sleepOrVerify)) {
             while (!$sleepOrVerify($process)) {
-                codecept_debug('WPCLI background process verification failed, sleeping 50ms.');
+                codecept_debug('Background process not ready yet, sleeping 50ms...');
                 usleep(50000);
             }
         } elseif (is_numeric($sleepOrVerify)) {
-            codecept_debug("Sleeping {$sleepOrVerify}s after WPCLI background process started...");
+            codecept_debug("Sleeping {$sleepOrVerify}s after background process started...");
             sleep((float)$sleepOrVerify);
         }
 
