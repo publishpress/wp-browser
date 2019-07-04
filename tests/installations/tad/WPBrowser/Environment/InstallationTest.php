@@ -1,5 +1,6 @@
 <?php namespace tad\WPBrowser\Environment;
 
+use Psr\Http\Message\ResponseInterface;
 use tad\WPBrowser\Traits\WithSqliteDatabase;
 use tad\WPBrowser\Traits\WithWpCli;
 
@@ -149,7 +150,7 @@ class InstallationTest extends \Codeception\Test\Unit
     ) {
         $installation = new Installation($rootDir);
 
-        if ($rootDir ===  codecept_output_dir('wp-installations/dir-one')) {
+        if ($rootDir === codecept_output_dir('wp-installations/dir-one')) {
             // Make sure the installation has a theme.
             $themeInstall = $installation->cli(['theme', 'install', 'twentyseventeen', '--activate']);
             if ($themeInstall->getErrorOutput()) {
@@ -194,6 +195,43 @@ class InstallationTest extends \Codeception\Test\Unit
         curl_close($request);
 
         return $response;
+    }
+
+    /**
+     * It should allow serving the installation on a random port
+     *
+     * @test
+     * @depends      should_correctly_configure_and_install_the_installation
+     */
+    public function should_allow_serving_the_installation_on_a_random_port()
+    {
+        $rootDir = codecept_output_dir('wp-installations/dir-two');
+        $installation = new Installation($rootDir);
+
+        $this->assertFalse($installation->getServerPort());
+        $this->assertFalse($installation->getServerUrl());
+        $this->assertFalse($installation->isBeingServed());
+
+        $url = $installation->serve();
+        // Serve it again to test this will not fail.
+        $installation->serve();
+
+        $port = $installation->getServerPort();
+        $this->assertNotEmpty($port);
+        $this->assertEquals("http://localhost:{$port}", $url);
+        $this->assertEquals("http://localhost:{$port}", $installation->getServerUrl());
+        $this->assertTrue($installation->isBeingServed());
+        $response = $this->requestUrl($installation);
+        $this->assertEquals(200, $response['http_code']);
+        $this->assertEquals($port, $response['primary_port']);
+
+        $installation->stopServing();
+
+        $this->assertFalse($installation->isBeingServed());
+        $this->assertFalse($installation->getServerPort());
+        $this->assertFalse($installation->getServerUrl());
+        $response = $this->requestUrl($installation);
+        $this->assertEquals(0, $response['http_code']);
     }
 
     protected function _before()

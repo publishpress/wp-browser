@@ -700,10 +700,13 @@ class Installation
         while ($port = static::$lastServerPort++) {
             try {
                 if (in_array($port, static::$usedLocalhostPorts, true)) {
-                    continue;
+                    continue
+                    ;
                 }
+
                 $this->verifyLocalhostPortIsAvailable($port);
-                yield $port;
+
+                return $port;
             } catch (InstallationException $e) {
                 // Continue.
             }
