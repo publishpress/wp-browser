@@ -56,7 +56,7 @@ class WordPress extends Universal
     /**
      * Performs the request in a separate process.
      *
-     * @param Request        $request The request to perform.
+     * @param Request        $request   The request to perform.
      * @param Processes|null $processes Either the Process adapter or `null` to build it in the method.
      *
      * @return Response The request response.

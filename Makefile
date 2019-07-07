@@ -17,22 +17,24 @@ COMPOSE_FILE ?= docker-compose.yml
 CODECEPTION_VERSION ?= "^2.5"
 PROJECT := $(shell basename ${CURDIR})
 
-.PHONY: wp_dump \
-	cs_sniff \
-	cs_fix  \
-	cs_fix_n_sniff  \
-	ci_before_install  \
-	ci_before_script \
-	ci_docker_restart \
-	ci_install  \
-	ci_local_prepare \
-	ci_run  \
-	ci_script \
-	pre_commit \
-	clean_wp_installations \
-	clean_dependencies \
-	require_codeception_2.5 \
-	require_codeception_3
+.PHONY: wp_dump
+.PHONY: cs_sniff
+.PHONY: cs_fix
+.PHONY: cs_fix_n_sniff
+.PHONY: ci_before_install
+.PHONY: ci_before_script
+.PHONY: ci_docker_restart
+.PHONY: ci_install
+.PHONY: ci_local_prepare
+.PHONY: ci_run
+.PHONY: ci_script
+.PHONY: pre_commit
+.PHONY: clean_wp_installations
+.PHONY: clean_dependencies
+.PHONY: require_codeception_2.5
+.PHONY: require_codeception_3
+.PHONY: coverage_merged
+.PHONY: coverage_show
 
 define wp_config_extra
 if ( filter_has_var( INPUT_SERVER, 'HTTP_HOST' ) ) {
@@ -79,15 +81,13 @@ cs_sniff:
 	vendor/bin/phpcs --colors -p \
 		--standard=phpcs.xml $(SRC) \
 		--ignore=src/data,src/includes,src/tad/scripts,src/tad/WPBrowser/Compat \
-		-s \
-		src
+		-s src
 
 cs_fix:
 	vendor/bin/phpcbf --colors -p \
 		--standard=phpcs.xml $(SRC) \
 		--ignore=src/data,src/includes,src/tad/scripts,tests/_output \
-		-s \
-		src tests
+		-s src tests
 
 cs_fix_n_sniff: cs_fix cs_sniff
 
@@ -291,3 +291,11 @@ require_codeception_2.5:
 require_codeception_3:
 	rm -rf composer.lock vendor/codeception vendor/phpunit vendor/sebastian \
 		&& composer require codeception/codeception:^3.0
+
+COVERAGE_SUITES = unit installations
+coverage_merged:
+	$(foreach SUITE,$(COVERAGE_SUITES),vendor/bin/codecept run $(SUITE) --coverage coverage-$(SUITE).cov --coverage-xml coverage-$(SUITE).xml;)
+	vendor/bin/phpcov merge tests/_output --html tests/_output/coverage-report
+
+coverage_show:
+	open tests/_output/coverage-report/index.html
