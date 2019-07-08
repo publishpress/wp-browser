@@ -190,7 +190,7 @@ class MySQL extends \Codeception\Lib\Driver\MySql implements WordPressDatabaseIn
         // TODO: Implement restore() method.
     }
 
-    public function dumpTo()
+    public function dumpTo($destination)
     {
         // TODO: Implement backup() method.
     }

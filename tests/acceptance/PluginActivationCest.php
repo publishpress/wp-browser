@@ -73,7 +73,7 @@ class PluginActivationCest
     protected function scaffoldTestPlugins()
     {
         $config = (\Codeception\Configuration::config());
-        $wpFolder = $config['wpFolder'];
+        $wpFolder = $config['paths']['wpFolder'];
         $template
             = <<< HANDLEBARS
 <?php
