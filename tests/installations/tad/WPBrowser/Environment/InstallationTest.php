@@ -1,6 +1,9 @@
 <?php namespace tad\WPBrowser\Environment;
 
-use Psr\Http\Message\ResponseInterface;
+use org\bovigo\vfs\vfsStream;
+use Symfony\Component\Process\Process;
+use tad\WPBrowser\Exceptions\InstallationException;
+use tad\WPBrowser\Interfaces\WordPressDatabaseInterface;
 use tad\WPBrowser\Traits\WithSqliteDatabase;
 use tad\WPBrowser\Traits\WithWpCli;
 
@@ -73,6 +76,37 @@ class InstallationTest extends \Codeception\Test\Unit
         $this->assertEquals($version, $installation->getVersion());
     }
 
+    /**
+     * It should throw if download process fails
+     *
+     * @test
+     */
+    public function should_throw_if_download_process_fails()
+    {
+        $rootDir = codecept_output_dir('wp-installations/' . $this->getTestName());
+        $installation = new Installation($rootDir, 'not-existing-version');
+
+        $this->expectException(InstallationException::class);
+
+        $installation->download();
+    }
+
+    /**
+     * It should throw if root dir is not writeable
+     *
+     * @test
+     */
+    public function should_throw_if_root_dir_is_not_writeable()
+    {
+        $rootDir = vfsStream::setup('root');
+        $rootDir->addChild(vfsStream::newDirectory('wp', 0000));
+        $installation = new Installation($rootDir->url() . '/wp');
+
+        $this->expectException(InstallationException::class);
+
+        $installation->download();
+    }
+
     public function installationDownloadData()
     {
         return [
@@ -130,6 +164,44 @@ class InstallationTest extends \Codeception\Test\Unit
         $installation->install($url, $title, $adminUser, $adminPassword, $adminEmail);
 
         $this->assertTrue($installation->isInstalled());
+        $expectedContentDirPath = $rootDir . '/wp-content';
+        $this->assertEquals($expectedContentDirPath, $installation->getWpContentDir());
+        $this->assertSame($db, $installation->getDatabase());
+    }
+
+    /**
+     * It should throw if configuration process fails
+     *
+     * @test
+     */
+    public function should_throw_if_configuration_process_fails()
+    {
+        $rootDir = vfsStream::setup('root');
+        $rootDir->addChild(vfsStream::newDirectory('wp'));
+        $rootDirPath = $rootDir->url() . '/wp';
+        $installation = new Installation($rootDirPath);
+        $db = $this->makeEmpty(WordPressDatabaseInterface::class);
+
+        $this->expectException(InstallationException::class);
+
+        $installation->configure($db);
+    }
+
+    /**
+     * It should throw if installation process fails
+     *
+     * @test
+     */
+    public function should_throw_if_installation_process_fails()
+    {
+        $rootDir = vfsStream::setup('root');
+        $rootDir->addChild(vfsStream::newDirectory('wp'));
+        $rootDirPath = $rootDir->url() . '/wp';
+        $installation = new Installation($rootDirPath);
+
+        $this->expectException(InstallationException::class);
+
+        $installation->install();
     }
 
     /**
@@ -174,6 +246,9 @@ class InstallationTest extends \Codeception\Test\Unit
         $response = $this->requestUrl($installation);
         $this->assertEquals(200, $response['http_code']);
         $this->assertEquals($port, $response['primary_port']);
+
+        $this->expectException(InstallationException::class);
+        $installation->serve($port);
 
         $installation->stopServing();
 
@@ -232,6 +307,77 @@ class InstallationTest extends \Codeception\Test\Unit
         $this->assertFalse($installation->getServerUrl());
         $response = $this->requestUrl($installation);
         $this->assertEquals(0, $response['http_code']);
+    }
+
+    /**
+     * It should throw if stop server process fails
+     *
+     * @test
+     */
+    public function should_throw_if_stop_server_process_fails()
+    {
+        $rootDir = vfsStream::setup('root');
+        $rootDir->addChild(vfsStream::newDirectory('wp'));
+        $rootDirPath = $rootDir->url() . '/wp';
+        $installation = new Installation($rootDirPath);
+
+        $throw = static function () {
+            throw new \RuntimeException('Error');
+        };
+
+        $serverProcess = $this->make(Process::class, [
+            'isRunning' => true,
+            'getPid' => 23,
+            'stop' => $throw
+        ]);
+
+        $this->expectException(InstallationException::class);
+
+        $installation->attachServerProcess($serverProcess, 9089);
+        $installation->stopServing();
+    }
+
+    /**
+     * It should throw if server process does not terminate
+     *
+     * @test
+     */
+    public function should_throw_if_server_process_does_not_terminate()
+    {
+        $rootDir = vfsStream::setup('root');
+        $rootDir->addChild(vfsStream::newDirectory('wp'));
+        $rootDirPath = $rootDir->url() . '/wp';
+        $installation = new Installation($rootDirPath);
+
+        $serverProcess = $this->make(Process::class, [
+            'isRunning' => true,
+            'stop' => true,
+            'getPid' => 23,
+            'getStatus' => Process::STATUS_STARTED
+        ]);
+
+        $this->expectException(InstallationException::class);
+
+        $installation->attachServerProcess($serverProcess, 9089);
+        $installation->stopServing();
+    }
+
+    /**
+     * It should throw if serve process fails
+     *
+     * @test
+     */
+    public function should_throw_if_serve_process_fails()
+    {
+        $rootDir = vfsStream::setup('root');
+        $rootDir->addChild(vfsStream::newDirectory('wp'));
+        $rootDirPath = $rootDir->url() . '/wp';
+        $installation = new Installation($rootDirPath);
+        $db = $this->makeEmpty(WordPressDatabaseInterface::class);
+
+        $this->expectException(InstallationException::class);
+
+        $installation->serve();
     }
 
     protected function _before()

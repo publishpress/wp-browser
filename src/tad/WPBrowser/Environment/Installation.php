@@ -330,8 +330,12 @@ class Installation
      */
     protected function createRootDir()
     {
-        if (!is_dir($this->rootDir)
-            && !mkdir($destDir = $this->rootDir, 0777, true) && !is_dir($destDir)
+        $dir = $this->rootDir;
+
+        if (!is_dir($dir)
+            && !mkdir($dir = $this->rootDir, 0777, true)
+            && !(is_dir($dir) && is_writable($dir) && is_readable($dir))
+
         ) {
             throw InstallationException::becauseRootDirCannotBeCreated($this);
         }
@@ -543,8 +547,13 @@ class Installation
 
         if (!$this->serverUrl !== $this->url) {
             $this->url = $this->serverUrl;
-            $this->updateOptionWithWpcli('siteurl', $this->serverUrl);
-            $this->updateOptionWithWpcli('home', $this->serverUrl);
+            try {
+                $this->updateOptionWithWpcli('siteurl', $this->serverUrl);
+                $this->updateOptionWithWpcli('home', $this->serverUrl);
+            } catch (WpCliException $e) {
+                throw InstallationException::becauseInstallationCannotBeServed($this, $e->getMessage());
+            }
+
             codecept_debug(sprintf('Installation URL changed to [%s]', $this->serverUrl));
         }
 
@@ -631,7 +640,7 @@ class Installation
      *
      * The method will just return if the site is not currently being served.
      *
-     * @throws WpCliException If the wp-cli server process cannot be stopped.
+     * @throws InstallationException If the wp-cli server process cannot be stopped.
      */
     public function stopServing()
     {
@@ -646,10 +655,20 @@ class Installation
         $pid = $this->serverProcess->getPid();
         codecept_debug("Stopping installation server process (PID: {$pid})...");
 
-        $this->serverProcess->stop();
-
-        if ($this->serverProcess->getStatus() !== Process::STATUS_TERMINATED) {
-            throw  WpCliException::becauseACommandFailed($this->serverProcess);
+        try {
+            $this->serverProcess->stop();
+            if ($this->serverProcess->getStatus() !== Process::STATUS_TERMINATED
+            ) {
+                throw InstallationException::becauseInstallationServerCannotBeStopped(
+                    $this->serverProcess,
+                    'Process is not terminated.'
+                );
+            }
+        } catch (\Exception $e) {
+            throw InstallationException::becauseInstallationServerCannotBeStopped(
+                $this->serverProcess,
+                $e->getMessage()
+            );
         }
 
         codecept_debug("Installation server process (PID: {$pid}) stopped.");
@@ -700,8 +719,7 @@ class Installation
         while ($port = static::$lastServerPort++) {
             try {
                 if (in_array($port, static::$usedLocalhostPorts, true)) {
-                    continue
-                    ;
+                    continue;
                 }
 
                 $this->verifyLocalhostPortIsAvailable($port);
@@ -738,5 +756,21 @@ class Installation
         }
 
         return false;
+    }
+
+    /**
+     * Sets the server process for the installation.
+     *
+     * Mind  there is no actual check on the server process actually being a server process at all.
+     *
+     * @param Process $serverProcess The installation server process.
+     * @param int     $port          The localhost port the installation is being served on.
+     */
+    public function attachServerProcess(Process $serverProcess, $port)
+    {
+        $this->serverProcess = $serverProcess;
+        $this->isBeingServed = $serverProcess->isRunning();
+        $this->serverPort = (int)$port;
+        self::$usedLocalhostPorts[] = (int)$port;
     }
 }

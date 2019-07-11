@@ -90,7 +90,7 @@ class InstallationException extends \Exception
      * Builds and returns an exception to indicate an installation cannot be served.
      *
      * @param Installation $installation The installation object.
-     * @param string      $reason The reason for the server process failure.
+     * @param string       $reason       The reason for the server process failure.
      *
      * @return InstallationException The built exception.
      */
@@ -105,10 +105,10 @@ class InstallationException extends \Exception
     }
 
     /**
-     * Builds and returns an exception to indicate an installation cannot be served on a port as alraedy occupied.
+     * Builds and returns an exception to indicate an installation cannot be served on a port as already occupied.
      *
      * @param Installation $installation The installation object.
-     * @param int      $port The unavailable port.
+     * @param int          $port         The unavailable port.
      *
      * @return InstallationException The built exception.
      */
@@ -118,6 +118,22 @@ class InstallationException extends \Exception
             'Cannot serve the installation from docroot [%s] on port [%d] as it is already used.',
             $installation->getRootDir(),
             $port
+        ));
+    }
+
+    /**
+     * Builds and returns an exception to indicate an installation server cannot be stopped.
+     *
+     * @param Process $serverProcess The installation server process.
+     * @param string  $reason        The reason why the server process cannot be stopped.
+     *
+     * @return InstallationException The built exception.
+     */
+    public static function becauseInstallationServerCannotBeStopped(Process $serverProcess, $reason)
+    {
+        return new static(sprintf(
+            'Cannot stop the installation server : %s',
+            $reason
         ));
     }
 }
