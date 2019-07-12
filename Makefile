@@ -33,19 +33,9 @@ PROJECT := $(shell basename ${CURDIR})
 .PHONY: clean_dependencies
 .PHONY: require_codeception_2.5
 .PHONY: require_codeception_3
+.PHONY: coverage_prepare
 .PHONY: coverage_merged
 .PHONY: coverage_show
-
-define wp_config_extra
-if ( filter_has_var( INPUT_SERVER, 'HTTP_HOST' ) ) {
-	if ( ! defined( 'WP_HOME' ) ) {
-		define( 'WP_HOME', 'http://' . \$_SERVER['HTTP_HOST'] );
-	}
-	if ( ! defined( 'WP_SITEURL' ) ) {
-		define( 'WP_SITEURL', 'http://' . \$_SERVER['HTTP_HOST'] );
-	}
-}
-endef
 
 # PUll all the Docker images this repository will use in building images or running processes.
 docker_pull:
@@ -292,9 +282,23 @@ require_codeception_3:
 	rm -rf composer.lock vendor/codeception vendor/phpunit vendor/sebastian \
 		&& composer require codeception/codeception:^3.0
 
-COVERAGE_SUITES = unit installations
-coverage_merged:
+coverage_prepare:
+	# Download c3.php file from Codeception repository.
+	curl https://raw.github.com/Codeception/c3/2.0/c3.php > vendor/wordpress/wordpress/c3.php
+	# Replace WordPress default file with one including c3.php first.
+	mv vendor/wordpress/wordpress/index.php vendor/wordpress/wordpress/index.php.orig
+	cp docker/c3-index.php vendor/wordpress/wordpress/index.php
+	# Install XDebug 2.5.5 in the WordPress container; newest versions are not compatible with PHP 5.6.
+	docker-compose -f docker/docker-compose.yml exec wp pecl install xdebug-2.5.5
+	# Activate and configure XDebug in the WordPress installation.
+	docker-compose -f docker/docker-compose.yml exec wp bash -c "echo 'zend_extension=xdebug.so' > /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini"
+	docker-compose -f docker/docker-compose.yml exec wp bash -c "echo 'xdebug.remote_enable=1' >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini"
+
+COVERAGE_SUITES = acceptance cli climodule dbunit functional installations muloader unit webdriver wpfunctional wploader_sqlite wploader_wpdb_interaction wploadersuite wpmodule
+coverage_run:
 	$(foreach SUITE,$(COVERAGE_SUITES),vendor/bin/codecept run $(SUITE) --coverage coverage-$(SUITE).cov --coverage-xml coverage-$(SUITE).xml;)
+
+coverage_merge:
 	vendor/bin/phpcov merge tests/_output --html tests/_output/coverage-report
 
 coverage_show:
