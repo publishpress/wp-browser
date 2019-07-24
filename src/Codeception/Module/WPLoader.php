@@ -324,6 +324,9 @@ class WPLoader extends Module
             $this->installAndBootstrapInstallation();
         }
 
+        // Make the `factory` property available on the `$tester` property.
+        $this->setupFactoryStore();
+
         if (Debug::isEnabled()) {
             codecept_debug('WordPress status: ' . json_encode(
                 $this->healthcheck->run(),
@@ -473,8 +476,6 @@ class WPLoader extends Module
         $this->removeLoadWatchers();
 
         $this->setupCurrentSite();
-        $this->factoryStore = new FactoryStore();
-        $this->factoryStore->setupFactories();
     }
 
     /**
@@ -957,5 +958,14 @@ class WPLoader extends Module
     public function _isUsingInMemorySqlite()
     {
         return !empty($this->config['useSqlite']) && $this->config['useSqlite'] === 'memory';
+    }
+
+    /**
+     * Instantiates and sets up the factory store that will be available on the suite tester.
+     */
+    protected function setupFactoryStore()
+    {
+        $this->factoryStore = new FactoryStore();
+        $this->factoryStore->setupFactories();
     }
 }
