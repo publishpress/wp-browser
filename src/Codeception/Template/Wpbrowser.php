@@ -628,6 +628,9 @@ modules:
             adminUsername: '%TEST_SITE_ADMIN_USERNAME%'
             adminPassword: '%TEST_SITE_ADMIN_PASSWORD%'
             adminPath: '%TEST_SITE_WP_ADMIN_PATH%'
+            headers:
+                X_TEST_REQUEST: 1
+                X_WPBROWSER_REQUEST: 1
         WPFilesystem:
             wpRootFolder: '%WP_ROOT_FOLDER%'
             plugins: '/wp-content/plugins'
@@ -676,6 +679,9 @@ modules:
             adminUsername: '%TEST_SITE_ADMIN_USERNAME%'
             adminPassword: '%TEST_SITE_ADMIN_PASSWORD%'
             adminPath: '%TEST_SITE_WP_ADMIN_PATH%'
+            headers:
+                X_TEST_REQUEST: 1
+                X_WPBROWSER_REQUEST: 1
 EOF;
         $this->createSuite($installationData['acceptanceSuiteSlug'], $actor, $suiteConfig);
     }
@@ -703,7 +709,7 @@ EOF;
         $this->say('<info>This command will guide you through the initial setup for your project.</info>');
         echo PHP_EOL;
         $this->say('<info>If you are new to wp-browser please take the time to read this guide:</info>');
-        $this->say('<info>https://github.com/lucatume/wp-browser#initial-setup</info>');
+        $this->say('<info>https://wpbrowser.wptestkit.dev/</info>');
         echo PHP_EOL;
         $acknowledge = $this->ask(
             '<warning>'
@@ -712,6 +718,8 @@ EOF;
             .'</warning>',
             true
         );
+        $this->sayInfo('If you want to automatically use a test database during acceptance and functional tests, ' .
+            'read here: https://wpbrowser.wptestkit.dev/tutorials/switching-database-during-acceptance-tests');
         echo PHP_EOL;
         if (!$acknowledge) {
             $this->say('<info>The command did not do anything, nothing changed.</info>');
