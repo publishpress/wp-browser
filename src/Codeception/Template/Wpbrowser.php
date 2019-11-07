@@ -7,11 +7,13 @@ use Dotenv\Dotenv;
 use Symfony\Component\Console\Exception\RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 use tad\WPBrowser\Template\Data;
+use tad\WPBrowser\Traits\WithCustomCliColors;
 use function tad\WPBrowser\parseUrl;
 use function tad\WPBrowser\slug;
 
 class Wpbrowser extends Bootstrap
 {
+    use WithCustomCliColors;
 
     /**
      * Whether to output during the bootstrap process or not.
@@ -33,6 +35,12 @@ class Wpbrowser extends Bootstrap
      * @var string
      */
     protected $envFileName = '';
+    /**
+     * Whether to remove the files created by the command or not.
+     *
+     * @var bool
+     */
+    protected $removeCreatedFiles = true;
 
     /**
      * @param bool $interactive
@@ -42,9 +50,10 @@ class Wpbrowser extends Bootstrap
      */
     public function setup($interactive = true)
     {
+        $this->customizeOutputColors($this->output, 'cold');
+
         /** @noinspection PhpUnhandledExceptionInspection */
         $this->checkInstalled($this->workDir);
-
         $input = $this->input;
 
         $this->quiet = (bool)$this->input->getOption('quiet');
@@ -76,7 +85,7 @@ class Wpbrowser extends Bootstrap
             $this->askForAcknowledgment();
         }
 
-        $this->say("<fg=white;bg=magenta> Bootstrapping Codeception for WordPress </fg=white;bg=magenta>\n");
+        $this->say("<info> Bootstrapping Codeception for WordPress </info>\n");
 
         $this->createGlobalConfig();
 
@@ -106,23 +115,23 @@ class Wpbrowser extends Bootstrap
             $this->say("tests/unit.suite.yml written       <- unit tests suite configuration");
             $this->createWpUnitSuite(ucwords($installationData['wpunitSuite']), $installationData);
             $this->say("tests/{$installationData['wpunitSuiteSlug']} created               "
-                       . '<- WordPress unit and integration tests');
+                . '<- WordPress unit and integration tests');
             $this->say("tests/{$installationData['wpunitSuiteSlug']}.suite.yml written     "
-                       . '<- WordPress unit and integration tests suite configuration');
+                . '<- WordPress unit and integration tests suite configuration');
             $this->createFunctionalSuite(ucwords($installationData['functionalSuite']), $installationData);
             $this->say("tests/{$installationData['functionalSuiteSlug']} created           "
-                       . "<- {$installationData['functionalSuiteSlug']} tests");
+                . "<- {$installationData['functionalSuiteSlug']} tests");
             $this->say("tests/{$installationData['functionalSuiteSlug']}.suite.yml written "
-                       . "<- {$installationData['functionalSuiteSlug']} tests suite configuration");
+                . "<- {$installationData['functionalSuiteSlug']} tests suite configuration");
             $this->createAcceptanceSuite(ucwords($installationData['acceptanceSuite']), $installationData);
             $this->say("tests/{$installationData['acceptanceSuiteSlug']} created           "
-                       . "<- {$installationData['acceptanceSuiteSlug']} tests");
+                . "<- {$installationData['acceptanceSuiteSlug']} tests");
             $this->say("tests/{$installationData['acceptanceSuiteSlug']}.suite.yml written "
-                       . "<- {$installationData['acceptanceSuiteSlug']} tests suite configuration");
+                . "<- {$installationData['acceptanceSuiteSlug']} tests suite configuration");
         } catch (ModuleConfigException $e) {
             $this->removeCreatedFiles();
             $this->say('<error>Something is not ok in the modules configurations: '
-                       .'check your answers and try again.</error>');
+                . 'check your answers and try again.</error>');
             $this->say('<error>' . $e->getMessage() . '</error>');
             $this->sayInfo('All files and folders created by the initialization attempt have been removed.');
 
@@ -133,38 +142,79 @@ class Wpbrowser extends Bootstrap
         $this->say();
         if ($interactive) {
             $this->saySuccess("Codeception is installed for {$installationData['acceptanceSuiteSlug']}, "
-                              . "{$installationData['functionalSuiteSlug']}, and WordPress unit testing");
+                . "{$installationData['functionalSuiteSlug']}, and WordPress unit testing");
         } else {
             $this->saySuccess("Codeception has created the files for the {$installationData['acceptanceSuiteSlug']}, "
-                              . "{$installationData['functionalSuiteSlug']}, WordPress unit and unit suites "
-                              . 'but the modules are not activated');
+                . "{$installationData['functionalSuiteSlug']}, WordPress unit and unit suites "
+                . 'but the modules are not activated');
         }
         $this->say('Some commands have been added in the Codeception configuration file: '
-                   .'check them out using <comment>codecept --help</comment>');
+            . 'check them out using <comment>codecept --help</comment>');
         $this->say(" --- ");
         $this->say();
 
         $this->say("<bold>Next steps:</bold>");
         $this->say('0. <bold>Create the databases used by the modules</bold>; wp-browser will not do it for you!');
         $this->say('1. <bold>Install and configure WordPress</bold> activating the theme and plugins you need to create'
-                   . ' a database dump in <comment>tests/_data/dump.sql</comment>');
+            . ' a database dump in <comment>tests/_data/dump.sql</comment>');
         $this->say("2. Edit <bold>tests/{$installationData['acceptanceSuiteSlug']}.suite.yml</bold> to make sure WPDb "
-                   . 'and WPBrowser configurations match your local setup; change WPBrowser to WPWebDriver to '
-                   . 'enable browser testing');
+            . 'and WPBrowser configurations match your local setup; change WPBrowser to WPWebDriver to '
+            . 'enable browser testing');
         $this->say("3. Edit <bold>tests/{$installationData['functionalSuiteSlug']}.suite.yml</bold> to make sure "
-                   . 'WordPress and WPDb configurations match your local setup');
+            . 'WordPress and WPDb configurations match your local setup');
         $this->say("4. Edit <bold>tests/{$installationData['wpunitSuiteSlug']}.suite.yml</bold> to make sure WPLoader "
-                   . 'configuration matches your local setup');
+            . 'configuration matches your local setup');
         $this->say("5. Create your first {$installationData['acceptanceSuiteSlug']} tests using <comment>codecept "
-                   . "g:cest {$installationData['acceptanceSuiteSlug']} WPFirst</comment>");
+            . "g:cest {$installationData['acceptanceSuiteSlug']} WPFirst</comment>");
         $this->say("6. Write a test in <bold>tests/{$installationData['acceptanceSuiteSlug']}/WPFirstCest.php</bold>");
         $this->say("7. Run tests using: <comment>codecept run {$installationData['acceptanceSuiteSlug']}</comment>");
         $this->say(" --- ");
         $this->say();
         $this->sayWarning('Please note: due to WordPress extended use of globals and constants you should avoid running'
-                          . ' all the suites at the same time.');
+            . ' all the suites at the same time.');
         $this->say('Run each suite separately, like this: <comment>codecept run unit && codecept run '
-                   . "{$installationData['wpunitSuiteSlug']}</comment>, to avoid problems.");
+            . "{$installationData['wpunitSuiteSlug']}</comment>, to avoid problems.");
+
+        $this->removeCreatedFiles = false;
+    }
+
+    protected function askForAcknowledgment()
+    {
+        echo PHP_EOL;
+        $this->say('<bold>'
+            . 'Welcome to wp-browser, a complete testing suite for WordPress based on Codeception and PHPUnit!'
+            . '</bold>');
+        echo PHP_EOL;
+        $this->say('<info>This command will guide you through the initial setup for your project.</info>');
+        echo PHP_EOL;
+        $this->say('<info>If you are new to wp-browser and run inot issues, ' .
+            'please take the time to read this guide:</info>');
+        $this->say('<bold>https://wpbrowser.wptestkit.dev/</bold>');
+        echo PHP_EOL;
+        $acknowledge = $this->ask(
+            '<warning>'
+            . 'I acknowledge wp-browser should run on development servers only, '
+            . 'that I have made a backup of my files and database contents before proceeding.'
+            . '</warning>',
+            true
+        );
+        echo PHP_EOL;
+        $this->sayInfo('If you want to automatically use a test database during acceptance and functional tests, ' .
+            'read here:' );
+        $this->sayInfo('<bold>https://wpbrowser.wptestkit.dev/tutorials/using-diff-db-in-tests</bold>');
+        $this->sayInfo('');
+        echo PHP_EOL;
+        if (!$acknowledge) {
+            $this->say('<info>The command did not do anything, nothing changed.</info>');
+            $this->say('<info>'
+                . 'Setup a WordPress installation and database dedicated to development and '
+                . 'restart this command when ready using `vendor/bin/codecept init wpbrowser`.'
+                . '</info>');
+            echo PHP_EOL;
+            $this->say('<info>See you soon!</info>');
+            exit(0);
+        }
+        echo PHP_EOL;
     }
 
     protected function say($message = '')
@@ -348,9 +398,9 @@ class Wpbrowser extends Bootstrap
 
         echo PHP_EOL;
         $this->sayWarning(implode(PHP_EOL, [
-                'WPLoader should be configured to run on a dedicated database!',
-                'The data stored on the database used by the WPLoader module will be lost!',
-            ]));
+            'WPLoader should be configured to run on a dedicated database!',
+            'The data stored on the database used by the WPLoader module will be lost!',
+        ]));
         echo PHP_EOL;
 
         $installationData['testDbName'] = $this->ask(
@@ -460,7 +510,7 @@ class Wpbrowser extends Bootstrap
         if (file_exists($filename)) {
             $basename = basename($filename);
             $message = "Found a previous {$basename} file."
-                       . PHP_EOL . "Remove the existing {$basename} file or specify a different name for the env file.";
+                . PHP_EOL . "Remove the existing {$basename} file or specify a different name for the env file.";
             throw new RuntimeException($message);
         }
     }
@@ -477,23 +527,23 @@ class Wpbrowser extends Bootstrap
         $filename = $this->workDir . DIRECTORY_SEPARATOR . $this->envFileName;
 
         $envKeys = [
-            'testSiteDbHost'=>true,
-            'testSiteDbName'=>true,
-            'testSiteDbUser'=>true,
-            'testSiteDbPassword'=>true,
-            'testSiteTablePrefix'=>true,
-            'testSiteWpUrl'=>true,
-            'testSiteAdminUsername'=>true,
-            'testSiteAdminPassword'=>true,
-            'testSiteWpAdminPath'=>true,
-            'wpRootFolder'=>true,
-            'testDbName'=>true,
-            'testDbHost'=>true,
-            'testDbUser'=>true,
-            'testDbPassword'=>true,
-            'testTablePrefix'=>true,
-            'testSiteWpDomain'=>true,
-            'testSiteAdminEmail'=>true,
+            'testSiteDbHost' => true,
+            'testSiteDbName' => true,
+            'testSiteDbUser' => true,
+            'testSiteDbPassword' => true,
+            'testSiteTablePrefix' => true,
+            'testSiteWpUrl' => true,
+            'testSiteAdminUsername' => true,
+            'testSiteAdminPassword' => true,
+            'testSiteWpAdminPath' => true,
+            'wpRootFolder' => true,
+            'testDbName' => true,
+            'testDbHost' => true,
+            'testDbUser' => true,
+            'testDbPassword' => true,
+            'testTablePrefix' => true,
+            'testSiteWpDomain' => true,
+            'testSiteAdminEmail' => true,
         ];
 
         $envEntries = array_intersect_key($installationData, $envKeys);
@@ -523,12 +573,12 @@ class Wpbrowser extends Bootstrap
     {
         $files = ['codeception.yml', $this->envFileName];
         $dirs = ['tests'];
-        foreach ($files as $file) {
+        foreach (array_filter($files) as $file) {
             if (file_exists(getcwd() . '/' . $file)) {
                 unlink(getcwd() . '/' . $file);
             }
         }
-        foreach ($dirs as $dir) {
+        foreach (array_filter($dirs) as $dir) {
             if (file_exists(getcwd() . '/' . $dir)) {
                 rrmdir(getcwd() . '/' . $dir);
             }
@@ -579,7 +629,7 @@ EOF;
         }
 
         $plugins = $installationData['plugins'];
-        $plugins = "'" . implode("', '", (array) $plugins) . "'";
+        $plugins = "'" . implode("', '", (array)$plugins) . "'";
         $suiteConfig .= <<< EOF
         
             plugins: [{$plugins}]
@@ -686,6 +736,24 @@ EOF;
         $this->createSuite($installationData['acceptanceSuiteSlug'], $actor, $suiteConfig);
     }
 
+    /**
+     * Sets the template working directory.
+     *
+     * @param string $workDir The path to the working directory the template should use.
+     */
+    public function setWorkDir($workDir)
+    {
+        chdir($workDir);
+    }
+
+    /**
+     * On destruction remove the created files if the command did not complete correctly.
+     */
+    public function __destruct()
+    {
+        $this->removeCreatedFiles();
+    }
+
     protected function getDefaultInstallationData()
     {
         return [];
@@ -696,51 +764,8 @@ EOF;
         $envFileName = trim($this->envFileName);
         if (strpos($envFileName, '.env') !== 0) {
             $message = 'Please specify an env file name starting with ".env", e.g. ".env.testing" or '
-                .'".env.development"';
+                . '".env.development"';
             throw new RuntimeException($message);
         }
-    }
-
-    protected function askForAcknowledgment()
-    {
-        $this->say('<info>'
-                   . 'Welcome to wp-browser, a complete testing suite for WordPress based on Codeception and PHPUnit!'
-                   . '</info>');
-        $this->say('<info>This command will guide you through the initial setup for your project.</info>');
-        echo PHP_EOL;
-        $this->say('<info>If you are new to wp-browser please take the time to read this guide:</info>');
-        $this->say('<info>https://wpbrowser.wptestkit.dev/</info>');
-        echo PHP_EOL;
-        $acknowledge = $this->ask(
-            '<warning>'
-            .'I acknowledge wp-browser should run on development servers only, '
-            .'that I have made a backup of my files and database contents before proceeding.'
-            .'</warning>',
-            true
-        );
-        $this->sayInfo('If you want to automatically use a test database during acceptance and functional tests, ' .
-            'read here: https://wpbrowser.wptestkit.dev/tutorials/switching-database-during-acceptance-tests');
-        echo PHP_EOL;
-        if (!$acknowledge) {
-            $this->say('<info>The command did not do anything, nothing changed.</info>');
-            $this->say('<info>'
-                       .'Setup a WordPress installation and database dedicated to development and '
-                       .'restart this command when ready using `vendor/bin/codecept init wpbrowser`.'
-                       .'</info>');
-            echo PHP_EOL;
-            $this->say('<info>See you soon!</info>');
-            exit(0);
-        }
-        echo PHP_EOL;
-    }
-
-    /**
-     * Sets the template working directory.
-     *
-     * @param string $workDir The path to the working directory the template should use.
-     */
-    public function setWorkDir($workDir)
-    {
-        chdir($workDir);
     }
 }

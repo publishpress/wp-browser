@@ -251,10 +251,10 @@ During the setup phase I've specified the database to be used for `acceptance` a
 
 What we'll do now means:
 
-* if the request is a normal one, use the `wordpress-one`  database
-* if the request comes from a test, use the `tests` database
+* If the request is a normal one, use the `wordpress-one` database.
+* If the request comes from a test, use the `tests` database.
 
-In your IDE/text-editor of choice edit the `~/Repos/VVV/www/wordpress-one/public_html/wp-config.php` and replace the line defining the `DB_NAME` constant:
+In your IDE/text-editor of choice edit the `~/Repos/VVV/www/wordpress-one/public_html/wp-config.php` and replace the line defining the `DB_NAME` constant like this:
 
 ```diff
 - define( 'DB_NAME', 'wordpress-one' );
@@ -265,13 +265,45 @@ In your IDE/text-editor of choice edit the `~/Repos/VVV/www/wordpress-one/public
 + }
 ```
 
-After this [Codeception](http://codeception.com/ "Codeception - BDD-style PHP testing.") and [wp-browser](https://github.com/lucatume/wp-browser "lucatume/wp-browser · GitHub") are ready to run and the test-drive development can start scaffolding a first test:
+Here's the copy-and-paste friendly version:
+
+```php
+if( isset( $_SERVER['HTTP_X_TEST_REQUEST'] ) && $_SERVER['HTTP_X_TEST_REQUEST'] ) {
+		define( 'DB_NAME', 'tests' );
+} else {
+		define( 'DB_NAME', 'wordpress-one' );
+}
+```
+
+[Codeception](http://codeception.com/ "Codeception - BDD-style PHP testing.") and [wp-browser](https://github.com/lucatume/wp-browser "lucatume/wp-browser · GitHub") are ready to run and the test-drive development can start.
+
+## Sanity check
+
+Before starting to write tests, take a moment to run each suite separately and make sure all is set up correctly.  
+
+If you run into issues, there's a chance you forgot something along the way, please take the time to read this tutorial a second time before opening an issue.
+
+You have created 4 suites, each suite has at least one example test to make sure all works.  
+Run each suite and make sure all tests succeed, from within the box run:
 
 ```bash
-codecept generate:cept acceptance Homepage
+cd /srv/www/wordpress-one/public_html/wp-content/plugins/my-plugin 
+vendor/bin/codecept run acceptance
+vendor/bin/codecept run functional
+vendor/bin/codecept run wpunit
+vendor/bin/codecept run unit
+```
+
+To check that all suites 
+
+[Start creating a test of ]
+
+```bash
+vendor/bin/codecept generate:cept acceptance Homepage
 ```
 
 ## A code peek
+
 I've [pushed a demonstrative repository to GitHub](https://github.com/lucatume/word-counter) for the "Future WP" event that contains all the files and code I've shown at the "Future WP" event.  
 There is the code I've developed for and during the workshop with [wp-browser](https://github.com/lucatume/wp-browser "lucatume/wp-browser · GitHub"), [Codeception](http://codeception.com/ "Codeception - BDD-style PHP testing.") and [Composer](https://getcomposer.org/) setup files I've used on the VVV machine.  
 This small guide is the short version of the [presentation](https://github.com/lucatume/word-counter/blob/master/presentation/presentation.md) document I've used at the workshop.
