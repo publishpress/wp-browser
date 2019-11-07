@@ -258,7 +258,7 @@ In your IDE/text-editor of choice edit the `~/Repos/VVV/www/wordpress-one/public
 
 ```diff
 - define( 'DB_NAME', 'wordpress-one' );
-+ if( isset( $_SERVER['HTTP_X_TEST_REQUEST'] ) && $_SERVER['HTTP_X_TEST_REQUEST'] ) { 
++ if( isset( $_SERVER['HTTP_X_WPBROWSER_REQUEST'] ) && $_SERVER['HTTP_X_WPBROWSER_REQUEST'] ) { 
 +    define( 'DB_NAME', 'tests' );
 + } else {
 +    define( 'DB_NAME', 'wordpress-one' );
