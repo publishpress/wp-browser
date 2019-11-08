@@ -194,7 +194,7 @@ Below a complete list of each answer:
 * How would you like the functional suite to be called? `functional`
 * How would you like the WordPress unit and integration suite to be called? `wpunit`
 * How would you like to call the env configuration file? `.env.testing`
-* Where is WordPress installed? `/srv/www/wordpress-one/public_html`
+* What is the path of the WordPress root directory? `/srv/www/wordpress-one/public_html`
 * What is the path, relative to WordPress root URL, of the admin area of the test site? `/wp-admin`
 * What is the name of the test database used by the test site? `tests`
 * What is the host of the test database used by the test site? `localhost`
