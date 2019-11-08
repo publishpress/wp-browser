@@ -8,6 +8,7 @@ use Symfony\Component\Console\Exception\RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 use tad\WPBrowser\Template\Data;
 use tad\WPBrowser\Traits\WithCustomCliColors;
+use function tad\WPBrowser\findWordPressRootDir;
 use function tad\WPBrowser\parseUrl;
 use function tad\WPBrowser\slug;
 
@@ -85,11 +86,20 @@ class Wpbrowser extends Bootstrap
             $this->askForAcknowledgment();
         }
 
-        $this->say("<info> Bootstrapping Codeception for WordPress </info>\n");
+        $this->say();
+        $this->sayTitle('Bootstrapping Codeception for WordPress');
+        $this->say();
+        $this->sayInfo('You can find a long explanation of each question here:');
+        $this->sayInfo(
+            '<bold>' .
+            'https://wpbrowser.wptestkit.dev/summary/getting-started/configuration#long-question-explanation' .
+            '</bold>'
+        );
+        $this->say();
 
         $this->createGlobalConfig();
 
-        $this->say("File codeception.yml created       <- global configuration");
+        $this->say('codeception.dist.yml created       <- global configuration');
 
         $this->createDirs();
 
@@ -100,7 +110,7 @@ class Wpbrowser extends Bootstrap
         if ($interactive === true) {
             $this->say();
             $interactive = $this->ask('Would you like to set up the suites interactively now?', 'yes');
-            $this->say(' --- ');
+            $this->say('---');
             $this->say();
             $interactive = preg_match('/^(n|N)/', $interactive) ? false : true;
         }
@@ -138,7 +148,7 @@ class Wpbrowser extends Bootstrap
             return;
         }
 
-        $this->say(" --- ");
+        $this->say('---');
         $this->say();
         if ($interactive) {
             $this->saySuccess("Codeception is installed for {$installationData['acceptanceSuiteSlug']}, "
@@ -146,11 +156,11 @@ class Wpbrowser extends Bootstrap
         } else {
             $this->saySuccess("Codeception has created the files for the {$installationData['acceptanceSuiteSlug']}, "
                 . "{$installationData['functionalSuiteSlug']}, WordPress unit and unit suites "
-                . 'but the modules are not activated');
+                . 'but the modules are not activated.');
         }
-        $this->say('Some commands have been added in the Codeception configuration file: '
+        $this->sayInfo('Some commands have been added in the Codeception configuration file: '
             . 'check them out using <comment>codecept --help</comment>');
-        $this->say(" --- ");
+        $this->say('---');
         $this->say();
 
         $this->say("<bold>Next steps:</bold>");
@@ -168,29 +178,38 @@ class Wpbrowser extends Bootstrap
             . "g:cest {$installationData['acceptanceSuiteSlug']} WPFirst</comment>");
         $this->say("6. Write a test in <bold>tests/{$installationData['acceptanceSuiteSlug']}/WPFirstCest.php</bold>");
         $this->say("7. Run tests using: <comment>codecept run {$installationData['acceptanceSuiteSlug']}</comment>");
-        $this->say(" --- ");
+        $this->say('---');
         $this->say();
-        $this->sayWarning('Please note: due to WordPress extended use of globals and constants you should avoid running'
-            . ' all the suites at the same time.');
-        $this->say('Run each suite separately, like this: <comment>codecept run unit && codecept run '
+        $this->sayInfo('Please note: <bold>due to WordPress extended use of globals and constants you should avoid ' .
+                       'running all the suites at the same time!</bold>');
+        $this->sayInfo('Run each suite separately, like this: <comment>codecept run unit && codecept run '
             . "{$installationData['wpunitSuiteSlug']}</comment>, to avoid problems.");
 
         $this->removeCreatedFiles = false;
     }
 
+    protected function sayWarning($message)
+    {
+        $this->say("<warning>$message</warning>");
+    }
+
+    protected function saySuccess($message)
+    {
+        $this->say("<ok>$message</ok>");
+    }
+
     protected function askForAcknowledgment()
     {
-        echo PHP_EOL;
+        $this->say();
         $this->say('<bold>'
-            . 'Welcome to wp-browser, a complete testing suite for WordPress based on Codeception and PHPUnit!'
+            . 'Welcome to wp-browser, a complete testing suite for WordPress projects based on Codeception and PHPUnit!'
             . '</bold>');
-        echo PHP_EOL;
-        $this->say('<info>This command will guide you through the initial setup for your project.</info>');
-        echo PHP_EOL;
-        $this->say('<info>If you are new to wp-browser and run inot issues, ' .
-            'please take the time to read this guide:</info>');
-        $this->say('<bold>https://wpbrowser.wptestkit.dev/</bold>');
-        echo PHP_EOL;
+        $this->say();
+        $this->sayInfo('This command will guide you through the initial setup for your project.');
+        $this->sayInfo('If you are new to wp-browser and run inot issues, ' .
+            'please take the time to read this guide:');
+        $this->sayInfo('<bold>https://wpbrowser.wptestkit.dev/</bold>');
+        $this->say();
         $acknowledge = $this->ask(
             '<warning>'
             . 'I acknowledge wp-browser should run on development servers only, '
@@ -198,23 +217,21 @@ class Wpbrowser extends Bootstrap
             . '</warning>',
             true
         );
-        echo PHP_EOL;
-        $this->sayInfo('If you want to automatically use a test database during acceptance and functional tests, ' .
-            'read here:' );
+        $this->say();
+        $this->sayInfo('If you want to automatically use a test database during acceptance and functional tests, '
+                       . 'read here:');
         $this->sayInfo('<bold>https://wpbrowser.wptestkit.dev/tutorials/using-diff-db-in-tests</bold>');
-        $this->sayInfo('');
-        echo PHP_EOL;
         if (!$acknowledge) {
-            $this->say('<info>The command did not do anything, nothing changed.</info>');
-            $this->say('<info>'
-                . 'Setup a WordPress installation and database dedicated to development and '
+            $this->say();
+            $this->sayInfo('The command did not do anything, nothing changed.');
+            $this->sayInfo(
+                'Setup a WordPress installation and database dedicated to development and '
                 . 'restart this command when ready using `vendor/bin/codecept init wpbrowser`.'
-                . '</info>');
-            echo PHP_EOL;
-            $this->say('<info>See you soon!</info>');
+            );
+            $this->say();
+            $this->saySuccess('See you soon!');
             exit(0);
         }
-        echo PHP_EOL;
     }
 
     protected function say($message = '')
@@ -352,13 +369,13 @@ class Wpbrowser extends Bootstrap
 
         $this->checkEnvFileExistence();
 
-        echo PHP_EOL;
+        $this->say();
         $this->sayInfo('WPLoader and WordPress modules need to access the WordPress files to work.');
-        echo PHP_EOL;
+        $this->say();
 
         $installationData['wpRootFolder'] = $this->normalizePath($this->ask(
             'Where is WordPress installed?',
-            '/var/www/wp'
+            findWordPressRootDir(codecept_root_dir(), '/var/www/wp')
         ));
         $installationData['testSiteWpAdminPath'] = $this->ask(
             'What is the path, relative to WordPress root URL, of the admin area of the test site?',
@@ -366,9 +383,9 @@ class Wpbrowser extends Bootstrap
         );
         $normalizedAdminPath = trim($this->normalizePath($installationData['testSiteWpAdminPath']), '/');
         $installationData['testSiteWpAdminPath'] = '/' . $normalizedAdminPath;
-        echo PHP_EOL;
+        $this->say();
         $this->sayInfo('The WPDb module needs the database details to access the test database used by the test site.');
-        echo PHP_EOL;
+        $this->say();
         $installationData['testSiteDbName'] = $this->ask(
             'What is the name of the test database used by the test site?',
             'wp_test_site'
@@ -390,18 +407,18 @@ class Wpbrowser extends Bootstrap
             'wp_'
         );
 
-        echo PHP_EOL;
+        $this->say();
         $this->sayInfo(
             'WPLoader will reinstall a fresh WordPress installation before the tests.' .
             PHP_EOL . 'It needs the details you would typically provide when installing WordPress from scratch.'
         );
 
-        echo PHP_EOL;
+        $this->say();
         $this->sayWarning(implode(PHP_EOL, [
             'WPLoader should be configured to run on a dedicated database!',
             'The data stored on the database used by the WPLoader module will be lost!',
         ]));
-        echo PHP_EOL;
+        $this->say();
 
         $installationData['testDbName'] = $this->ask(
             'What is the name of the test database WPLoader should use?',
@@ -767,5 +784,11 @@ EOF;
                 . '".env.development"';
             throw new RuntimeException($message);
         }
+    }
+
+    protected function sayTitle($message)
+    {
+        $this->say("<bold>$message</bold>");
+        $this->say('---');
     }
 }

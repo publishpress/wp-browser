@@ -10,7 +10,7 @@
 
 namespace tad\WPBrowser\Traits;
 
-
+use Symfony\Component\Console\Formatter\OutputFormatterStyle;
 use Symfony\Component\Console\Output\OutputInterface;
 
 trait WithCustomCliColors
@@ -49,7 +49,7 @@ trait WithCustomCliColors
             'warning' => ['default', 'magenta', 'bold'],
             'info' => ['default', 'cyan'],
             'focus' => ['default', 'blue', 'bold'],
-            'ok' => ['default', 'white'],
+            'ok' => ['default', 'green'],
             'error' => ['default', 'red', 'bold'],
             'fail' => ['default', 'red'],
             'pending' => ['default', 'cyan'],
@@ -63,7 +63,8 @@ trait WithCustomCliColors
         if (!array_key_exists($colorScheme, static::$colorSchemes)) {
             throw new \InvalidArgumentException(
                 sprintf(
-                    'Color scheme "%s" was not found.', $colorScheme
+                    'Color scheme "%s" was not found.',
+                    $colorScheme
                 )
             );
         }
@@ -74,6 +75,8 @@ trait WithCustomCliColors
 
         foreach ($colorScheme as $style => list($background, $foreground)) {
             if (!$formatter->hasStyle($style)) {
+                $options = isset($colorScheme[$style][2]) ? $colorScheme[$style][2] : [];
+                $formatter->setStyle($style, new OutputFormatterStyle($foreground, $background, (array)$options));
                 continue;
             }
 

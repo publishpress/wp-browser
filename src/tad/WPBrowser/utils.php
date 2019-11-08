@@ -18,27 +18,27 @@ namespace tad\WPBrowser;
  */
 function buildCommandline($command)
 {
-    if (empty($command)|| is_array($command)) {
+    if (empty($command) || is_array($command)) {
         return array_filter((array)$command);
     }
 
-    $escapedCommandLine = ( new \Symfony\Component\Process\Process($command) )->getCommandLine();
+    $escapedCommandLine = (new \Symfony\Component\Process\Process($command))->getCommandLine();
     $commandLineFrags   = explode(' ', $escapedCommandLine);
 
     if (count($commandLineFrags) === 1) {
         return $commandLineFrags;
     }
 
-    $open = false;
-    $unescapedQuotesPattern  = '/(?<!\\\\)("|\')/u';
+    $open                   = false;
+    $unescapedQuotesPattern = '/(?<!\\\\)("|\')/u';
 
     return array_reduce($commandLineFrags, static function (array $acc, $v) use (&$open, $unescapedQuotesPattern) {
         $containsUnescapedQuotes = preg_match_all($unescapedQuotesPattern, $v);
-        $v = $open ? array_pop($acc) . ' ' . $v : $v;
-        $open = $containsUnescapedQuotes ?
+        $v                       = $open ? array_pop($acc) . ' ' . $v : $v;
+        $open                    = $containsUnescapedQuotes ?
             $containsUnescapedQuotes & 1 && (bool)$containsUnescapedQuotes !== $open
             : $open;
-        $acc[] = preg_replace($unescapedQuotesPattern, '', $v);
+        $acc[]                   = preg_replace($unescapedQuotesPattern, '', $v);
 
         return $acc;
     }, []);
@@ -57,28 +57,28 @@ function buildCommandline($command)
  */
 function slug($string, $sep = '-', $let = false)
 {
-    $unquotedSeps = $let ? [ '-', '_', $sep ] : [$sep];
-    $seps   = implode('', array_map(static function ($s) {
+    $unquotedSeps = $let ? ['-', '_', $sep] : [$sep];
+    $seps         = implode('', array_map(static function ($s) {
         return preg_quote($s, '~');
     }, array_unique($unquotedSeps)));
 
     // Prepend the separator to the first uppercase letter and trim the string.
-    $string = preg_replace('/(?<![A-Z'. $seps .'])([A-Z])/u', $sep.'$1', trim($string));
+    $string = preg_replace('/(?<![A-Z' . $seps . '])([A-Z])/u', $sep . '$1', trim($string));
 
     // Replace non letter or digits with the separator.
-    $string = preg_replace('~[^\pL\d'. $seps .']+~u', $sep, $string);
+    $string = preg_replace('~[^\pL\d' . $seps . ']+~u', $sep, $string);
 
     // Transliterate.
     $string = iconv('utf-8', 'us-ascii//TRANSLIT', $string);
 
     // Remove anything that is not a word or a number or the separator(s).
-    $string = preg_replace('~[^'. $seps .'\w]+~', '', $string);
+    $string = preg_replace('~[^' . $seps . '\w]+~', '', $string);
 
     // Trim excess separator chars.
     $string = trim(trim($string), $seps);
 
     // Remove duplicate separators and lowercase.
-    $string = strtolower(preg_replace('~['. $seps .']{2,}~', $sep, $string));
+    $string = strtolower(preg_replace('~[' . $seps . ']{2,}~', $sep, $string));
 
     // Empty strings are fine here.
     return $string;
@@ -131,21 +131,21 @@ function ensure($condition, $message)
  *
  * Differently from the internal implementation this one does not accept a component argument.
  *
- * @param     string $url The input URL.
+ * @param string $url The input URL.
  *
  * @return array An array of parsed components, or an array of default values.
  */
 function parseUrl($url)
 {
     return \parse_url($url) ?: [
-    'scheme' => '',
-    'host' => '',
-    'port' => 0,
-    'user' => '',
-    'pass' => '',
-    'path' => '',
-    'query' => '',
-    'fragment' => ''
+        'scheme'   => '',
+        'host'     => '',
+        'port'     => 0,
+        'user'     => '',
+        'pass'     => '',
+        'path'     => '',
+        'query'    => '',
+        'fragment' => ''
     ];
 }
 
@@ -167,4 +167,100 @@ function buildDate($date)
     }
 
     return new \DateTimeImmutable(is_numeric($date) ? '@' . $date : $date);
+}
+
+/**
+ * Finds a parent directory that passes a check.
+ *
+ * @param string   $dir   The path to the directory to check.
+ * @param callable $check The check to run on the directory.
+ *
+ * @return bool|string The directory path, or `false` if not found.
+ */
+function findParentDirThat($dir, callable $check)
+{
+    do {
+        if ($check($dir)) {
+            return $dir;
+        }
+
+        $parent = dirname($dir);
+
+        if ($dir === $parent) {
+            return false;
+        }
+
+        $dir = $parent;
+    } while ($dir);
+
+    return false;
+}
+
+/**
+ * Finds a directory, child to the current one, that passes a check.
+ *
+ * @param string   $dir   The path to the directory to check.
+ * @param callable $check The check to run on the directory.
+ *
+ * @return bool|string The directory path, or `false` if not found.
+ */
+function findChildDirThat($dir, callable $check)
+{
+    $found = $check($dir);
+
+    if ($found) {
+        return $dir;
+    }
+
+    $dirs = new \CallbackFilterIterator(
+        new \FilesystemIterator(
+            $dir,
+            \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::UNIX_PATHS | \FilesystemIterator::CURRENT_AS_PATHNAME
+        ),
+        static function ($f) {
+            return is_dir($f);
+        }
+    );
+
+    foreach ($dirs as $childDir) {
+        if ($found = findChildDirThat($childDir, $check)) {
+            return $found;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Finds the WordPress root directory in a parent or child directory.
+ *
+ * @param string|null $startDir The path to the directory to check, or `null` to use the current working directory.
+ * @param string|null $default The default value to return, or `null` to use the current working directory.
+ *
+ * @return string The path to the WordPress root folder, if found, or the default value.
+ */
+function findWordPressRootDir($startDir = null, $default = null)
+{
+    $getcwd   = getcwd();
+
+    if ($getcwd === false) {
+        return $default;
+    }
+
+    $startDir = $startDir ?: (string)$getcwd;
+    $default  = $default ?: (string)$getcwd;
+
+    $dir = $startDir;
+
+    $isWpRoot = static function ($dir) {
+        return file_exists($dir . '/wp-load.php');
+    };
+
+    $match = findParentDirThat($dir, $isWpRoot);
+
+    if (! $match) {
+        $match = findChildDirThat($dir, $isWpRoot);
+    }
+
+    return $match ?: $default;
 }
