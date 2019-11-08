@@ -10,7 +10,7 @@
     * [Setting up a minimum WordPress installation](setting-up-minimum-wordpress-installation.md)
     * [Configuration](configuration.md)
 * Tutorials
-    * [Setting up wp-browser on VVV to test a plugin](tutorials/setup-vvv-plugin.md)
+    * [Setting up wp-browser on VVV to test a plugin](tutorials/vvv-setup-guide.md)
 * Modules
     * [WPBrowser](modules/WPBrowser.md)
     * [WPCLI](modules/WPCLI.md)
