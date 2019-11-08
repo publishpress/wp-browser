@@ -274,7 +274,7 @@ wp_dump:
 	docker run -it --rm --volumes-from wpbrowser_wp --network container:wpbrowser_wp wordpress:cli wp db export \
 		/project/tests/_data/dump.sql
 
-pre_commit: lint cs_sniff
+pre_commit: lint cs_fix_n_sniff phpstan
 
 require_codeception_2.5:
 	mv vendor/wordpress _wordpress

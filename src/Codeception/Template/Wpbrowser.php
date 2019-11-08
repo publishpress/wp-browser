@@ -374,7 +374,7 @@ class Wpbrowser extends Bootstrap
         $this->say();
 
         $installationData['wpRootFolder'] = $this->normalizePath($this->ask(
-            'Where is WordPress installed?',
+            'What is the path of the WordPress root directory (the directory containing the wp-load.php file)?',
             findWordPressRootDir(codecept_root_dir(), '/var/www/wp')
         ));
         $installationData['testSiteWpAdminPath'] = $this->ask(
