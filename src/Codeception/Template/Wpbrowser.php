@@ -9,7 +9,9 @@ use Symfony\Component\Yaml\Yaml;
 use tad\WPBrowser\Template\Data;
 use tad\WPBrowser\Traits\WithCustomCliColors;
 use function tad\WPBrowser\findWordPressRootDir;
+use function tad\WPBrowser\normalizePath;
 use function tad\WPBrowser\parseUrl;
+use function tad\WPBrowser\pathJoin;
 use function tad\WPBrowser\slug;
 
 class Wpbrowser extends Bootstrap
@@ -373,97 +375,112 @@ class Wpbrowser extends Bootstrap
         $this->sayInfo('WPLoader and WordPress modules need to access the WordPress files to work.');
         $this->say();
 
-        $installationData['wpRootFolder'] = $this->normalizePath($this->ask(
+        $installationData['wpRootFolder'] = normalizePath($this->ask(
             'What is the path of the WordPress root directory (the directory containing the wp-load.php file)?',
             findWordPressRootDir(codecept_root_dir(), '/var/www/wp')
         ));
-        $installationData['testSiteWpAdminPath'] = $this->ask(
-            'What is the path, relative to WordPress root URL, of the admin area of the test site?',
-            '/wp-admin'
-        );
-        $normalizedAdminPath = trim($this->normalizePath($installationData['testSiteWpAdminPath']), '/');
+
+        if (is_dir(pathJoin($installationData['wpRootFolder'], '/wp-admin'))) {
+            $installationData['testSiteWpAdminPath'] = '/wp-admin';
+        } else {
+            $installationData['testSiteWpAdminPath'] = $this->ask(
+                'What is the path, relative to WordPress root URL, of the admin area of the test site?',
+                '/wp-admin'
+            );
+        }
+        $normalizedAdminPath = trim(normalizePath($installationData['testSiteWpAdminPath']), '/');
         $installationData['testSiteWpAdminPath'] = '/' . $normalizedAdminPath;
-        $this->say();
-        $this->sayInfo('The WPDb module needs the database details to access the test database used by the test site.');
-        $this->say();
-        $installationData['testSiteDbName'] = $this->ask(
-            'What is the name of the test database used by the test site?',
-            'wp_test_site'
-        );
-        $installationData['testSiteDbHost'] = $this->ask(
-            'What is the host of the test database used by the test site?',
-            'localhost'
-        );
-        $installationData['testSiteDbUser'] = $this->ask(
-            'What is the user of the test database used by the test site?',
-            'root'
-        );
-        $installationData['testSiteDbPassword'] = $this->ask(
-            'What is the password of the test database used by the test site?',
-            ''
-        );
-        $installationData['testSiteTablePrefix'] = $this->ask(
-            'What is the table prefix of the test database used by the test site?',
-            'wp_'
-        );
 
-        $this->say();
-        $this->sayInfo(
-            'WPLoader will reinstall a fresh WordPress installation before the tests.' .
-            PHP_EOL . 'It needs the details you would typically provide when installing WordPress from scratch.'
-        );
+        $dbCoords = findDbCoordinates($installationData['wpRootFolder']);
+        $useFoundConfig = false;
 
-        $this->say();
-        $this->sayWarning(implode(PHP_EOL, [
-            'WPLoader should be configured to run on a dedicated database!',
-            'The data stored on the database used by the WPLoader module will be lost!',
-        ]));
-        $this->say();
+        if ($dbCoords !== false) {
+            // @todo offer to use the coords we found to setup the test database.
+        }
 
-        $installationData['testDbName'] = $this->ask(
-            'What is the name of the test database WPLoader should use?',
-            'wp_test_integration'
-        );
-        $installationData['testDbHost'] = $this->ask(
-            'What is the host of the test database WPLoader should use?',
-            'localhost'
-        );
-        $installationData['testDbUser'] = $this->ask(
-            'What is the user of the test database WPLoader should use?',
-            'root'
-        );
-        $installationData['testDbPassword'] = $this->ask(
-            'What is the password of the test database WPLoader should use?',
-            ''
-        );
-        $installationData['testTablePrefix'] = $this->ask(
-            'What is the table prefix of the test database WPLoader should use?',
-            'wp_'
-        );
-        $installationData['testSiteWpUrl'] = $this->ask(
-            'What is the URL the test site?',
-            'http://wp.test'
-        );
-        $installationData['testSiteWpUrl'] = rtrim($installationData['testSiteWpUrl'], '/');
-        $url = parseUrl($installationData['testSiteWpUrl']);
-        $installationData['urlScheme'] = empty($url['scheme']) ? 'http' : $url['scheme'];
-        $installationData['testSiteWpDomain'] = empty($url['host']) ? 'example.com' : $url['host'];
-        $installationData['urlPort'] = empty($url['port']) ? '' : ':' . $url['port'];
-        $installationData['urlPath'] = empty($url['path']) ? '' : $url['path'];
-        $adminEmailCandidate = "admin@{$installationData['testSiteWpDomain']}";
-        $installationData['testSiteAdminEmail'] = $this->ask(
-            'What is the email of the test site WordPress administrator?',
-            $adminEmailCandidate
-        );
-        $installationData['title'] = $this->ask('What is the title of the test site?', 'Test');
-        $installationData['testSiteAdminUsername'] = $this->ask(
-            'What is the login of the administrator user of the test site?',
-            'admin'
-        );
-        $installationData['testSiteAdminPassword'] = $this->ask(
-            'What is the password of the administrator user of the test site?',
-            'password'
-        );
+        if (! $useFoundConfig) {
+            $this->say();
+            $this->sayInfo('The WPDb module needs the database details to access the test database used by the test site.');
+            $this->say();
+            $installationData['testSiteDbName']      = $this->ask(
+                'What is the name of the test database used by the test site?',
+                'wp_test_site'
+            );
+            $installationData['testSiteDbHost']      = $this->ask(
+                'What is the host of the test database used by the test site?',
+                'localhost'
+            );
+            $installationData['testSiteDbUser']      = $this->ask(
+                'What is the user of the test database used by the test site?',
+                'root'
+            );
+            $installationData['testSiteDbPassword']  = $this->ask(
+                'What is the password of the test database used by the test site?',
+                ''
+            );
+            $installationData['testSiteTablePrefix'] = $this->ask(
+                'What is the table prefix of the test database used by the test site?',
+                'wp_'
+            );
+
+            $this->say();
+            $this->sayInfo(
+                'WPLoader will reinstall a fresh WordPress installation before the tests.' .
+                PHP_EOL . 'It needs the details you would typically provide when installing WordPress from scratch.'
+            );
+
+            $this->say();
+            $this->sayWarning(implode(PHP_EOL, [
+                'WPLoader should be configured to run on a dedicated database!',
+                'The data stored on the database used by the WPLoader module will be lost!',
+            ]));
+            $this->say();
+
+            $installationData['testDbName']            = $this->ask(
+                'What is the name of the test database WPLoader should use?',
+                'wp_test_integration'
+            );
+            $installationData['testDbHost']            = $this->ask(
+                'What is the host of the test database WPLoader should use?',
+                'localhost'
+            );
+            $installationData['testDbUser']            = $this->ask(
+                'What is the user of the test database WPLoader should use?',
+                'root'
+            );
+            $installationData['testDbPassword']        = $this->ask(
+                'What is the password of the test database WPLoader should use?',
+                ''
+            );
+            $installationData['testTablePrefix']       = $this->ask(
+                'What is the table prefix of the test database WPLoader should use?',
+                'wp_'
+            );
+            $installationData['testSiteWpUrl']         = $this->ask(
+                'What is the URL the test site?',
+                'http://wp.test'
+            );
+            $installationData['testSiteWpUrl']         = rtrim($installationData['testSiteWpUrl'], '/');
+            $url                                       = parseUrl($installationData['testSiteWpUrl']);
+            $installationData['urlScheme']             = empty($url['scheme']) ? 'http' : $url['scheme'];
+            $installationData['testSiteWpDomain']      = empty($url['host']) ? 'example.com' : $url['host'];
+            $installationData['urlPort']               = empty($url['port']) ? '' : ':' . $url['port'];
+            $installationData['urlPath']               = empty($url['path']) ? '' : $url['path'];
+            $adminEmailCandidate                       = "admin@{$installationData['testSiteWpDomain']}";
+            $installationData['testSiteAdminEmail']    = $this->ask(
+                'What is the email of the test site WordPress administrator?',
+                $adminEmailCandidate
+            );
+            $installationData['title']                 = $this->ask('What is the title of the test site?', 'Test');
+            $installationData['testSiteAdminUsername'] = $this->ask(
+                'What is the login of the administrator user of the test site?',
+                'admin'
+            );
+            $installationData['testSiteAdminPassword'] = $this->ask(
+                'What is the password of the administrator user of the test site?',
+                'password'
+            );
+        }
 
         $sut = '';
 
@@ -532,13 +549,11 @@ class Wpbrowser extends Bootstrap
         }
     }
 
-    protected function normalizePath($path)
-    {
-        $pathFrags = preg_split('#([/\\\])#u', $path) ?: [];
-
-        return implode('/', $pathFrags);
-    }
-
+    /**
+     * Creates, writing it to disk, the environment (.env).
+     *
+     * @param array $installationData The installation data.
+     */
     protected function creatEnvFile(array $installationData = [])
     {
         $filename = $this->workDir . DIRECTORY_SEPARATOR . $this->envFileName;

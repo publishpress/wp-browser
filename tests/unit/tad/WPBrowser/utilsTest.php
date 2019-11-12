@@ -1,5 +1,7 @@
 <?php namespace tad\WPBrowser;
 
+use Throwable;
+
 class utilsTest extends \Codeception\Test\Unit
 {
     /**
@@ -235,5 +237,40 @@ class utilsTest extends \Codeception\Test\Unit
     public function test_findWordPressRootDir($input, $expected)
     {
         $this->assertEquals($expected, findWordPressRootDir($input));
+    }
+
+    public function pathJoinDataSet()
+    {
+        return [
+        'empty'     => ['',''],
+        'one_component'     => ['/foo-bar','/foo-bar'],
+        'two_components'     => ['/foo-bar/baz','/foo-bar/', '/baz'],
+        'three_components'     => ['C:/foo-bar/baz/test','C:\\foo-bar\\', '/baz', 'test'],
+        ];
+    }
+    /**
+     * @dataProvider pathJoinDataSet
+     */
+    function test_pathJoin($expected, ...$input)
+    {
+        $this->assertEquals($expected, pathJoin(...$input));
+    }
+
+    public function normalizePathDataSet()
+    {
+        return [
+           'empty' => ['',''],
+           'unix_abs_path' => ['/foo/bar/baz','/foo/bar/baz'],
+           'unix_rel_path' => ['foo/bar/baz','foo/bar/baz'],
+           'win_abs_path' => ['\foo\bar\baz','/foo/bar/baz'],
+           'win_rel_path' => ['foo\bar\baz','foo/bar/baz'],
+        ] ;
+    }
+    /**
+     * @dataProvider normalizePathDataSet
+     */
+    function test_normalizePath($input, $expected)
+    {
+        $this->assertEquals($expected, normalizePath($input));
     }
 }

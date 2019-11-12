@@ -7,6 +7,8 @@
 
 namespace tad\WPBrowser;
 
+use Symfony\Component\Process\Process;
+
 /**
  * Builds an array format command line, compatible with the Symfony Process component, from a string command line.
  *
@@ -263,4 +265,45 @@ function findWordPressRootDir($startDir = null, $default = null)
     }
 
     return $match ?: $default;
+}
+
+/**
+ * Normalizes a path to the Unix standard.
+ *
+ * @param string $path The path to normalize.
+ *
+ * @return string The normalized path.
+ */
+function normalizePath($path)
+{
+    return implode('/', preg_split('#([/\\\])#u', $path) ?: []);
+}
+
+/**
+ * Joins path fragments to form a unique, normalized, Unix path.
+ *
+ * @param mixed ...$frags The path fragments to join.
+ *
+ * @return string The joined, and Unix normalized, path fragments.
+ */
+function pathJoin(...$frags)
+{
+    return str_replace('\\', '/', implode(
+        '/',
+        array_reduce(
+            $frags,
+            static function (array $frags, $frag) {
+                static $count;
+
+                if ($count++ > 0) {
+                    $frags[] = normalizePath(trim($frag, '\\/'));
+                } else {
+                    $frags[] = normalizePath(rtrim($frag, '\\/'));
+                }
+
+                return $frags;
+            },
+            []
+        )
+    ));
 }

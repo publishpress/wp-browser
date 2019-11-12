@@ -50,7 +50,8 @@
     },
     "files": [
       "src/tad/WPBrowser/functions.php",
-      "src/tad/WPBrowser/utils.php"
+      "src/tad/WPBrowser/utils.php",
+      "src/tad/WPBrowser/wp.php"
     ]
   },
   "autoload-dev": {
@@ -58,7 +59,9 @@
       "tad\\Test\\" : "tests/_support/lib",
       "Codeception\\" : "tests/_data/classes/Codeception"
     },
-    "files": ["tests/_support/functions.php"]
+    "files": [
+      "tests/_support/functions.php"
+    ]
   },
   "scripts": {
     "post-install-cmd": "PHPStan\\WordPress\\Composer\\FixWpStubs::php73Polyfill",
