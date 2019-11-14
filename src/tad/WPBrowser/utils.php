@@ -7,8 +7,6 @@
 
 namespace tad\WPBrowser;
 
-use Symfony\Component\Process\Process;
-
 /**
  * Builds an array format command line, compatible with the Symfony Process component, from a string command line.
  *
@@ -25,22 +23,22 @@ function buildCommandline($command)
     }
 
     $escapedCommandLine = (new \Symfony\Component\Process\Process($command))->getCommandLine();
-    $commandLineFrags   = explode(' ', $escapedCommandLine);
+    $commandLineFrags = explode(' ', $escapedCommandLine);
 
     if (count($commandLineFrags) === 1) {
         return $commandLineFrags;
     }
 
-    $open                   = false;
+    $open = false;
     $unescapedQuotesPattern = '/(?<!\\\\)("|\')/u';
 
     return array_reduce($commandLineFrags, static function (array $acc, $v) use (&$open, $unescapedQuotesPattern) {
         $containsUnescapedQuotes = preg_match_all($unescapedQuotesPattern, $v);
-        $v                       = $open ? array_pop($acc) . ' ' . $v : $v;
-        $open                    = $containsUnescapedQuotes ?
+        $v = $open ? array_pop($acc) . ' ' . $v : $v;
+        $open = $containsUnescapedQuotes ?
             $containsUnescapedQuotes & 1 && (bool)$containsUnescapedQuotes !== $open
             : $open;
-        $acc[]                   = preg_replace($unescapedQuotesPattern, '', $v);
+        $acc[] = preg_replace($unescapedQuotesPattern, '', $v);
 
         return $acc;
     }, []);
@@ -52,15 +50,15 @@ function buildCommandline($command)
  * This will also convert `camelCase` to `camel-case`.
  *
  * @param string $string The string to create a slug for.
- * @param string $sep    The separator character to use, defaults to `-`.
- * @param bool   $let    Whether to let other common separators be or not.
+ * @param string $sep The separator character to use, defaults to `-`.
+ * @param bool $let Whether to let other common separators be or not.
  *
  * @return string The slug version of the string.
  */
 function slug($string, $sep = '-', $let = false)
 {
     $unquotedSeps = $let ? ['-', '_', $sep] : [$sep];
-    $seps         = implode('', array_map(static function ($s) {
+    $seps = implode('', array_map(static function ($s) {
         return preg_quote($s, '~');
     }, array_unique($unquotedSeps)));
 
@@ -117,8 +115,8 @@ function renderString($template, array $data = [], array $fnArgs = [])
 /**
  * Ensures a condition else throws an invalid argument exception.
  *
- * @param bool   $condition The condition to assert.
- * @param string $message   The exception message.
+ * @param bool $condition The condition to assert.
+ * @param string $message The exception message.
  */
 function ensure($condition, $message)
 {
@@ -140,13 +138,13 @@ function ensure($condition, $message)
 function parseUrl($url)
 {
     return \parse_url($url) ?: [
-        'scheme'   => '',
-        'host'     => '',
-        'port'     => 0,
-        'user'     => '',
-        'pass'     => '',
-        'path'     => '',
-        'query'    => '',
+        'scheme' => '',
+        'host' => '',
+        'port' => 0,
+        'user' => '',
+        'pass' => '',
+        'path' => '',
+        'query' => '',
         'fragment' => ''
     ];
 }
@@ -174,7 +172,7 @@ function buildDate($date)
 /**
  * Finds a parent directory that passes a check.
  *
- * @param string   $dir   The path to the directory to check.
+ * @param string $dir The path to the directory to check.
  * @param callable $check The check to run on the directory.
  *
  * @return bool|string The directory path, or `false` if not found.
@@ -201,7 +199,7 @@ function findParentDirThat($dir, callable $check)
 /**
  * Finds a directory, child to the current one, that passes a check.
  *
- * @param string   $dir   The path to the directory to check.
+ * @param string $dir The path to the directory to check.
  * @param callable $check The check to run on the directory.
  *
  * @return bool|string The directory path, or `false` if not found.
@@ -231,40 +229,6 @@ function findChildDirThat($dir, callable $check)
     }
 
     return false;
-}
-
-/**
- * Finds the WordPress root directory in a parent or child directory.
- *
- * @param string|null $startDir The path to the directory to check, or `null` to use the current working directory.
- * @param string|null $default The default value to return, or `null` to use the current working directory.
- *
- * @return string The path to the WordPress root folder, if found, or the default value.
- */
-function findWordPressRootDir($startDir = null, $default = null)
-{
-    $getcwd   = getcwd();
-
-    if ($getcwd === false) {
-        return $default;
-    }
-
-    $startDir = $startDir ?: (string)$getcwd;
-    $default  = $default ?: (string)$getcwd;
-
-    $dir = $startDir;
-
-    $isWpRoot = static function ($dir) {
-        return file_exists($dir . '/wp-load.php');
-    };
-
-    $match = findParentDirThat($dir, $isWpRoot);
-
-    if (! $match) {
-        $match = findChildDirThat($dir, $isWpRoot);
-    }
-
-    return $match ?: $default;
 }
 
 /**
@@ -306,4 +270,24 @@ function pathJoin(...$frags)
             []
         )
     ));
+}
+
+/**
+ * Tries to open a connection to a database provided the coordinates.
+ *
+ * @param string $dsn The database dsn string.
+ * @param string $user The db user.
+ * @param string $passwd The db password.
+ *
+ * @return \PDO|false Either an open PDO connection, or `false` on failure.
+ */
+function tryDbConnection($dsn,$user,$passwd)
+{
+    try {
+        return new \PDO($dsn, $user, $passwd);
+    } catch (\Exception $e) {
+        return false;
+    }
+
+    return false;
 }

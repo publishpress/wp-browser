@@ -1,4 +1,4 @@
-<?php
+<?php /** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace Codeception\Template;
 
@@ -8,11 +8,14 @@ use Symfony\Component\Console\Exception\RuntimeException;
 use Symfony\Component\Yaml\Yaml;
 use tad\WPBrowser\Template\Data;
 use tad\WPBrowser\Traits\WithCustomCliColors;
+use function tad\WPBrowser\buildDbCoordsFromWpCoords;
 use function tad\WPBrowser\findWordPressRootDir;
+use function tad\WPBrowser\findWpDbCoords;
 use function tad\WPBrowser\normalizePath;
 use function tad\WPBrowser\parseUrl;
 use function tad\WPBrowser\pathJoin;
 use function tad\WPBrowser\slug;
+use function tad\WPBrowser\tryDbConnection;
 
 class Wpbrowser extends Bootstrap
 {
@@ -53,6 +56,11 @@ class Wpbrowser extends Bootstrap
      */
     public function setup($interactive = true)
     {
+        if (extension_loaded('pcntl')) {
+            pcntl_signal(SIGINT, [$this, 'interrupt']);
+            pcntl_signal(SIGTERM, [$this, 'interrupt']);
+        }
+
         $this->customizeOutputColors($this->output, 'cold');
 
         /** @noinspection PhpUnhandledExceptionInspection */
@@ -107,14 +115,6 @@ class Wpbrowser extends Bootstrap
 
         if ($input->hasOption('empty') && $input->getOption('empty')) {
             return;
-        }
-
-        if ($interactive === true) {
-            $this->say();
-            $interactive = $this->ask('Would you like to set up the suites interactively now?', 'yes');
-            $this->say('---');
-            $this->say();
-            $interactive = preg_match('/^(n|N)/', $interactive) ? false : true;
         }
 
         $installationData = $this->getInstallationData($interactive);
@@ -342,37 +342,15 @@ class Wpbrowser extends Bootstrap
             ],
         ];
 
-        $installationData['acceptanceSuite'] = $this->ask(
-            'How would you like the acceptance suite to be called?',
-            'acceptance'
-        );
-        $installationData['functionalSuite'] = $this->ask(
-            'How would you like the functional suite to be called?',
-            'functional'
-        );
-        $installationData['wpunitSuite'] = $this->ask(
-            'How would you like the WordPress unit and integration suite to be called?',
-            'wpunit'
-        );
-
-        $installationData['acceptanceSuiteSlug'] = strtolower($installationData['acceptanceSuite']);
-        $installationData['functionalSuiteSlug'] = strtolower($installationData['functionalSuite']);
-        $installationData['wpunitSuiteSlug'] = strtolower($installationData['wpunitSuite']);
-
-        $this->say('---');
-        $this->say();
-
-        while (strpos($this->envFileName, '.env') !== 0) {
-            $this->envFileName = $this->ask(
-                'How would you like to call the env configuration file? (Should start with ".env")',
-                '.env.testing'
-            );
-        }
+        $installationData['acceptanceSuite'] = 'acceptance';
+        $installationData['functionalSuite'] = 'functional';
+        $installationData['wpunitSuite'] = 'wpunit';
+		$this->envFileName = '.env.testing';
 
         $this->checkEnvFileExistence();
 
         $this->say();
-        $this->sayInfo('WPLoader and WordPress modules need to access the WordPress files to work.');
+        $this->sayInfo('Some modules require access to the WordPress files to work.');
         $this->say();
 
         $installationData['wpRootFolder'] = normalizePath($this->ask(
@@ -391,11 +369,23 @@ class Wpbrowser extends Bootstrap
         $normalizedAdminPath = trim(normalizePath($installationData['testSiteWpAdminPath']), '/');
         $installationData['testSiteWpAdminPath'] = '/' . $normalizedAdminPath;
 
-        $dbCoords = findDbCoordinates($installationData['wpRootFolder']);
         $useFoundConfig = false;
 
-        if ($dbCoords !== false) {
+        $dbCoords = findWpDbCoords($installationData['wpRootFolder']);
+        $db = tryDbConnection(...buildDbCoordsFromWpCoords($dbCoords));
+
+        if ($db instanceof \PDO) {
+            $this->sayInfo(
+                'Successfully connected to the database using the coordinates found in the wp-config.php file'
+            );
+
+            $availableDbs = $db->query('SHOW DATABASES')->fetchAll();
+
+            $this->ask('What database would you like to use for the tests?', $availableDbs);
+
             // @todo offer to use the coords we found to setup the test database.
+
+            // @todo if the db is the current wp one, advise.
         }
 
         if (! $useFoundConfig) {
@@ -805,5 +795,11 @@ EOF;
     {
         $this->say("<bold>$message</bold>");
         $this->say('---');
+    }
+
+    protected function interrupt()
+    {
+        $this->removeCreatedFiles();
+        $this->saySuccess('Removed created files\.');
     }
 }

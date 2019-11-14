@@ -193,52 +193,6 @@ class utilsTest extends \Codeception\Test\Unit
         $this->assertEquals($expected, findChildDirThat($input, $check));
     }
 
-    public function findWordPressRootDirDataSet()
-    {
-        yield 'same' => [
-            codecept_data_dir('folder-structures/wp-struct-1/wp'),
-            codecept_data_dir('folder-structures/wp-struct-1/wp')
-        ];
-
-        yield 'immediate_parent' => [
-            codecept_data_dir('folder-structures/wp-struct-1/wp/wp-content'),
-            codecept_data_dir('folder-structures/wp-struct-1/wp')
-        ];
-
-        yield 'removed_parent' => [
-            codecept_data_dir('folder-structures/wp-struct-1/wp/wp-content/plugins/test-plugin'),
-            codecept_data_dir('folder-structures/wp-struct-1/wp')
-        ];
-
-        yield 'same' => [
-            codecept_data_dir('folder-structures/wp-struct-1/wp'),
-            codecept_data_dir('folder-structures/wp-struct-1/wp')
-        ];
-
-        yield 'immediate_child' => [
-            codecept_data_dir('folder-structures/wp-struct-1'),
-            codecept_data_dir('folder-structures/wp-struct-1/wp')
-        ];
-
-        yield 'removed_child' => [
-            codecept_data_dir('folder-structures'),
-            codecept_data_dir('folder-structures/wp-struct-1/wp')
-        ];
-
-        yield 'not_available' => [
-            __DIR__,
-            getcwd()
-        ];
-    }
-
-    /**
-     * @dataProvider findWordPressRootDirDataSet
-     */
-    public function test_findWordPressRootDir($input, $expected)
-    {
-        $this->assertEquals($expected, findWordPressRootDir($input));
-    }
-
     public function pathJoinDataSet()
     {
         return [
