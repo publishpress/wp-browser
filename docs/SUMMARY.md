@@ -1,4 +1,4 @@
-## Summary
+# Summary
 
 * [Welcome](welcome.md)
     * [Frequently asked questions](faq.md)
