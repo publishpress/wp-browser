@@ -88,7 +88,7 @@ function getWpConfigArgs($wpRootDir)
         'exit(json_encode(["constants" => $_constants,"vars" => $_vars], JSON_PRETTY_PRINT));'
     ] ;
 
-    $phpProcess = new Symfony\Component\Process\PhpProcess(
+    $phpProcess = new \Symfony\Component\Process\PhpProcess(
         implode(PHP_EOL, $code),
         dirname($wpConfigFile)
     );
@@ -105,13 +105,13 @@ function getWpConfigArgs($wpRootDir)
 }
 
 /**
- * Parses the database connection coordinates from the WordPress configuration file, `wp-config.php`.
+ * Parses the database connection credentials from the WordPress configuration file, `wp-config.php`.
  *
  * @param string $wpRootDir The path to the WordPress root directory, the one containing the `wp-load.php` file.
  *
- * @return array The database connection coordinates ('DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD') or an empty array.
+ * @return array The database connection credentials ('DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD') or an empty array.
  */
-function findWpDbCoords($wpRootDir)
+function findWpDbCreds($wpRootDir)
 {
     try {
         $wpConfigArgs = getWpConfigArgs($wpRootDir);
@@ -119,40 +119,44 @@ function findWpDbCoords($wpRootDir)
         return [];
     }
 
-    $expectedDbCoordsConstants = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
-    $dbCoords                  = [];
-    foreach ($expectedDbCoordsConstants as $const) {
+    $expectedDbCredsConstants = ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD'];
+    $dbCreds                  = [];
+    foreach ($expectedDbCredsConstants as $const) {
         if (! isset($wpConfigArgs['constants'][$const])) {
             continue;
         }
 
-        $dbCoords[$const] = $wpConfigArgs['constants'][$const];
+        $dbCreds[$const] = $wpConfigArgs['constants'][$const];
     }
 
     if (isset($wpConfigArgs['vars']['table_prefix'])) {
-        $dbCoords['table_prefix'] = $wpConfigArgs['vars']['table_prefix'];
+        $dbCreds['table_prefix'] = $wpConfigArgs['vars']['table_prefix'];
     }
 
-    return count($dbCoords) === count($expectedDbCoordsConstants) + 1 ? $dbCoords : [];
+    return count($dbCreds) === count($expectedDbCredsConstants) + 1 ? $dbCreds : [];
 }
 
 /**
- * Builds database connection coordinates from coordinates in the constant-based format used by WP.
+ * Builds database connection credentials from credentials in the constant-based format used by WP.
  *
- * @param array $dbCoords The WP db connection coordinates.
+ * @param array $dbCreds The WP db connection credentials.
  *
- * @return array The db coordinates in the shape [$dsn, $user, $passwd].
+ * @return array The db credentials in the shape [$dsn, $user, $passwd].
  */
-function buildDbCoordsFromWpCoords(array $dbCoords){
-    $dbName = isset($dbCoords['DB_NAME']) ? $dbCoords['DB_NAME'] : 'wordpress';
-    $dbHost = isset($dbCoords['DB_HOST']) ? $dbCoords['DB_HOST'] : 'localhost';
+function buildDbCredsFromWpCreds(array $dbCreds){
+    $dbName = isset($dbCreds['DB_NAME']) ? $dbCreds['DB_NAME'] : false;
+    $dbHost = isset($dbCreds['DB_HOST']) ? $dbCreds['DB_HOST'] : 'localhost';
     list($dbHost, $dbPort) = strpos($dbHost, ':') > 1
         ? explode(':', $dbHost)
         : [$dbHost, '3306'];
-    $dbUser = isset($dbCoords['DB_USER']) ? $dbCoords['DB_USER'] : 'root';
-    $dbPass = isset($dbCoords['DB_PASSWORD']) ? $dbCoords['DB_PASSWORD'] : '';
+    $dbUser = isset($dbCreds['DB_USER']) ? $dbCreds['DB_USER'] : 'root';
+    $dbPass = isset($dbCreds['DB_PASSWORD']) ? $dbCreds['DB_PASSWORD'] : '';
 
-    $dsn = sprintf( 'mysql:dbname=%s;host=%s;port=%d', $dbName,$dbHost,$dbPort);
+    if ($dbName) {
+        $dsn = sprintf('mysql:dbname=%s;host=%s;port=%d', $dbName, $dbHost, $dbPort);
+    }else {
+        $dsn = sprintf('mysql:host=%s;port=%d', $dbHost, $dbPort);
+    }
 
     return [$dsn, $dbUser, $dbPass];
 }

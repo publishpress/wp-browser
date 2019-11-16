@@ -281,7 +281,7 @@ function pathJoin(...$frags)
  *
  * @return \PDO|false Either an open PDO connection, or `false` on failure.
  */
-function tryDbConnection($dsn,$user,$passwd)
+function tryDbConnection($dsn, $user, $passwd)
 {
     try {
         return new \PDO($dsn, $user, $passwd);
@@ -290,4 +290,25 @@ function tryDbConnection($dsn,$user,$passwd)
     }
 
     return false;
+}
+
+/**
+ * Returns teh URL to a the documentation.
+ *
+ * @param string|null $path The relative path to the documentation section.
+ *
+ * @return string The full URL to the documentation.
+ */
+function docs($path = '/')
+{
+    return pathJoin('https://wpbrowser.wptestkit.dev/', $path);
+}
+
+/**
+ * Return the current version of the package.
+ *
+ * @return string The current version of the package.
+ */
+function version(){
+   return '2.2.31' ;
 }

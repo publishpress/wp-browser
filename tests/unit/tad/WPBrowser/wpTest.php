@@ -87,6 +87,6 @@ class wpTest extends Unit
      */
     public function testFindDbCoordinates($dir, $expected)
     {
-        $this->assertEquals($expected, findWpDbCoords($dir));
+        $this->assertEquals($expected, findWpDbCreds($dir));
     }
 }
