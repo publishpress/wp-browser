@@ -311,5 +311,25 @@ function docs($path = '/')
  */
 function version()
 {
-    return '2.2.31' ;
+    return '2.2.31';
+}
+
+/**
+ * A utility function to just move on.
+ */
+function goOn()
+{
+    // no-op
+}
+
+/**
+ * A function that will always return its input.
+ *
+ * @param mixed $input The function input.
+ *
+ * @return mixed The function input.
+ */
+function repeater($input)
+{
+    return $input;
 }

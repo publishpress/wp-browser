@@ -6,6 +6,7 @@ use Codeception\Exception\ModuleConfigException;
 use Dotenv\Dotenv;
 use Symfony\Component\Console\Exception\RuntimeException;
 use Symfony\Component\Yaml\Yaml;
+use tad\WPBrowser\Services\Db\PDOQueryRunner;
 use tad\WPBrowser\Template\Data;
 use tad\WPBrowser\Traits\WithCustomCliColors;
 use function tad\WPBrowser\buildDbCredsFromWpCreds;
@@ -50,6 +51,13 @@ class Wpbrowser extends Bootstrap
      * @var string
      */
     protected $projectName = 'project';
+
+    /**
+     * The PDO query runner instance.
+     *
+     * @var PDOQueryRunner
+     */
+    protected $queryRunner;
 
     public function setup()
     {
@@ -234,45 +242,21 @@ class Wpbrowser extends Bootstrap
         // @todo create the /getting-started/auto-configuration doc
         $this->sayInfo('Read more: <bold>'.docs('/getting-started/auto-configuration').'</bold>');
 
-        $allowRoot = $this->ask(
+        $autopilot = $this->ask(
             '<warning>'
             . 'Do you want to allow this script to access your database with all privileges?'
             . '</warning>',
             true
         );
 
-        if (!$allowRoot) {
+        if (!$autopilot) {
             $dbData = $this->askForDbData();
+            $siteData = $this->askForSiteData($installationData);
         } else {
-            $dbData = $this->handleDbData($installationData['wpRootFolder']);
+            list($dbData, $siteData) = $this->fetchDbAndSiteData($installationData['wpRootFolder']);
         }
 
-        $installationData = array_merge($installationData, $dbData);
-
-        $installationData['testSiteWpUrl'] = $this->ask(
-            'What is the URL the test site?',
-            'http://wp.test'
-        );
-        $installationData['testSiteWpUrl'] = rtrim($installationData['testSiteWpUrl'], '/');
-        $url = parseUrl($installationData['testSiteWpUrl']);
-        $installationData['urlScheme'] = empty($url['scheme']) ? 'http' : $url['scheme'];
-        $installationData['testSiteWpDomain'] = empty($url['host']) ? 'example.com' : $url['host'];
-        $installationData['urlPort'] = empty($url['port']) ? '' : ':' . $url['port'];
-        $installationData['urlPath'] = empty($url['path']) ? '' : $url['path'];
-        $adminEmailCandidate = "admin@{$installationData['testSiteWpDomain']}";
-        $installationData['testSiteAdminEmail'] = $this->ask(
-            'What is the email of the test site WordPress administrator?',
-            $adminEmailCandidate
-        );
-        $installationData['title'] = $this->ask('What is the title of the test site?', 'Test');
-        $installationData['testSiteAdminUsername'] = $this->ask(
-            'What is the login of the administrator user of the test site?',
-            'admin'
-        );
-        $installationData['testSiteAdminPassword'] = $this->ask(
-            'What is the password of the administrator user of the test site?',
-            'password'
-        );
+        $installationData = array_merge($installationData, $dbData, $siteData);
 
         $sut = '';
 
@@ -413,7 +397,7 @@ class Wpbrowser extends Bootstrap
         return $data;
     }
 
-    protected function handleDbData($wpRootFolder)
+    protected function fetchDbAndSiteData($wpRootFolder)
     {
         $this->say();
 
@@ -426,7 +410,7 @@ class Wpbrowser extends Bootstrap
             return $this->askForDbData();
         }
 
-        $tablePrefix = $dbCreds['table_prefix'];
+        $fullDdCreds = $dbCreds;
 
         $db = tryDbConnection(...buildDbCredsFromWpCreds($dbCreds));
 
@@ -451,24 +435,18 @@ class Wpbrowser extends Bootstrap
             exit(1);
         }
 
+        $this->queryRunner = new PDOQueryRunner($db);
+
         $this->sayInfo(
             'Successfully connected to the database.'
         );
 
-        list($testSiteDbName, $testDbName) = $this->tryCreateDb($db, $dbCreds);
+        $fullDdCreds = array_merge($fullDdCreds, $dbCreds);
 
-        $data['testSiteDbName'] = $testSiteDbName;
-        $data['testSiteDbHost'] =$dbCreds['DB_HOST'];
-        $data['testSiteDbUser'] =$dbCreds['DB_USER'] ;
-        $data['testSiteDbPassword'] = $dbCreds['DB_PASSWORD'] ;
-        $data['testSiteTablePrefix'] = $tablePrefix;
-        $data['testDbName'] = $testDbName;
-        $data['testDbHost'] =$dbCreds['DB_HOST'];
-        $data['testDbUser'] =$dbCreds['DB_USER'] ;
-        $data['testDbPassword'] = $dbCreds['DB_PASSWORD'] ;
-        $data['testTablePrefix'] = $tablePrefix;
+        $dbData = $this->fetchDbData($db, $fullDdCreds);
+        $siteData = $this->fetchSiteData($db, $fullDdCreds);
 
-        return $data;
+        return [$dbData, $siteData];
     }
 
     /**
@@ -536,29 +514,26 @@ class Wpbrowser extends Bootstrap
         return $db;
     }
 
-    protected function tryQuery($query, array $args, \PDO $db, array &$dbCreds)
+    protected function tryQuery($query, array $args, array &$dbCreds)
     {
-        $retries = 0;
-        do {
-            if ($retries === 3) {
-                $this->saySomethingNotWorking();
-                exit(1);
+        $retry = function (\PDO $pdo, $statement) use (&$dbCreds, $query) {
+            $this->sayWarning('Unable to run this query: ' . $query);
+            if ($statement instanceof \PDOStatement) {
+                $errorInfo = $statement->errorInfo();
+                if (isset($errorInfo[2])) {
+                    $this->sayInfo('Error: ' . $errorInfo[2]);
+                }
             }
+            $this->sayInfo('The specified database user might not have the required privileges;' .
+                ' please specify a user with all privileges on the database.');
+            return $this->askForDbCreds($dbCreds, ['DB_HOST', 'DB_USER', 'DB_PASSWORD']);
+        };
+        $fail = function () {
+            $this->saySomethingNotWorking();
+            exit(1);
+        };
 
-            if (empty($args)) {
-                $statement = $db->query($query);
-            } else {
-                $statement = $db->prepare($query)->execute($args);
-            }
-            if (!$statement instanceof \PDOStatement) {
-                $this->sayWarning('Unable to run this query: ' . $query);
-                $this->sayInfo('The specified database user might not have the required privileges;' .
-                    ' please specify a user with all privileges on the database.');
-                $db = $this->askForDbCreds($dbCreds, ['DB_HOST','DB_USER','DB_PASSWORD']);
-            }
-        } while ($retries++);
-
-        return $statement;
+        return $this->queryRunner->run($query, $args, $retry, $fail);
     }
 
     protected function saySomethingNotWorking()
@@ -1000,8 +975,8 @@ EOF;
         $testSiteDbName = slug(pathJoin($this->projectName, 'site_tests'), '_') ;
         $testDbName = slug(pathJoin($this->projectName, 'tests'), '_') ;
 
-        $createdSiteTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testSiteDbName}", [], $db, $dbCreds);
-        $createdTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testDbName}", [], $db, $dbCreds);
+        $createdSiteTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testSiteDbName}", [], $dbCreds);
+        $createdTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testDbName}", [], $dbCreds);
 
         if (!($createdSiteTestDb instanceof \PDOStatement && $createdTestDb instanceof \PDOStatement)) {
             $this->saySomethingNotWorking();
@@ -1024,5 +999,164 @@ EOF;
             $this->sayWarning('Project name cannot be empty');
             exit(1);
         }
+    }/**
+ * ${CARET}
+ *
+ * @param array $installationData
+ * @return array
+ * @since TBD
+ *
+ */
+    protected function askForSiteData(array $installationData)
+    {
+        $siteData = [];
+        $siteData['testSiteWpUrl'] = $this->ask(
+            'What is the URL the test site?',
+            'http://wp.test'
+        );
+        $siteData['testSiteWpUrl'] = rtrim($siteData['testSiteWpUrl'], '/');
+        $url = parseUrl($siteData['testSiteWpUrl']);
+        $siteData['urlScheme'] = empty($url['scheme']) ? 'http' : $url['scheme'];
+        $siteData['testSiteWpDomain'] = empty($url['host']) ? 'example.com' : $url['host'];
+        $siteData['urlPort'] = empty($url['port']) ? '' : ':' . $url['port'];
+        $siteData['urlPath'] = empty($url['path']) ? '' : $url['path'];
+        $adminEmailCandidate = "admin@{$siteData['testSiteWpDomain']}";
+        $siteData['testSiteAdminEmail'] = $this->ask(
+            'What is the email of the test site WordPress administrator?',
+            $adminEmailCandidate
+        );
+
+        $siteData['title'] = $this->ask('What is the title of the test site?', 'Test');
+
+        $siteData['testSiteAdminUsername'] = $this->ask(
+            'What is the login of the administrator user of the test site?',
+            'admin'
+        );
+        $siteData['testSiteAdminPassword'] = $this->ask(
+            'What is the password of the administrator user of the test site?',
+            'password'
+        );
+
+        return $siteData;
+    }
+
+    protected function fetchSiteData(\PDO $db, array &$dbCreds)
+    {
+        $siteData = [];
+
+        $useSiteDbStmt = $this->tryQuery("USE {$dbCreds['DB_NAME']}", [], $dbCreds);
+
+        if ($useSiteDbStmt === false) {
+            $this->sayWarning('Cannot fetch the value of the "siteurl" option from the database.');
+            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
+            exit(1);
+        }
+
+        $options = $dbCreds['table_prefix'] . 'options';
+        $testSiteWPUrlStmt = $this->tryQuery(
+            "SELECT option_value FROM {$options} WHERE option_name = ?",
+            ['siteurl'],
+            $dbCreds
+        );
+
+        $testSiteWPUrl = $testSiteWPUrlStmt->fetchColumn();
+
+        if (empty($testSiteWPUrl)) {
+            $this->sayWarning('Cannot fetch the value of the "siteurl" option from the database.');
+            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
+            exit(1);
+        }
+
+        $siteData['testSiteWpUrl'] = $testSiteWPUrl;
+        $siteData['testSiteWpUrl'] = rtrim($siteData['testSiteWpUrl'], '/');
+        $url = parseUrl($siteData['testSiteWpUrl']);
+        $siteData['urlScheme'] = empty($url['scheme']) ? 'http' : $url['scheme'];
+        $siteData['testSiteWpDomain'] = empty($url['host']) ? 'example.com' : $url['host'];
+        $siteData['urlPort'] = empty($url['port']) ? '' : ':' . $url['port'];
+        $siteData['urlPath'] = empty($url['path']) ? '' : $url['path'];
+        $adminEmailCandidate = "admin@{$siteData['testSiteWpDomain']}";
+        $siteData['testSiteAdminEmail'] = filter_var($adminEmailCandidate, FILTER_VALIDATE_EMAIL) ?
+            $adminEmailCandidate
+            : $this->ask('What is the email of the test site WordPress administrator?');
+
+        $siteData['title'] = $this->projectName . ' test';
+
+        $usermeta = $dbCreds['table_prefix'] . 'usermeta';
+        $testSiteAdminIdStmt = $this->tryQuery(
+            "SELECT user_id FROM {$usermeta} WHERE meta_key = ? and meta_value like ?;",
+            ['wp_capabilities', '%s:13:"administrator";%'],
+            $dbCreds
+        );
+
+        if (empty($testSiteAdminIdStmt)) {
+            $this->sayWarning('Cannot read the admin user details from the database.');
+            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
+            exit(1);
+        }
+
+        $testSiteAdminUserId = $testSiteAdminIdStmt->fetchColumn();
+
+        $users = $dbCreds['table_prefix'] . 'users';
+        $testSiteAdminUsernameStmt = $this->tryQuery(
+            "SELECT user_login FROM {$users} WHERE ID = ?;",
+            [(int)$testSiteAdminUserId],
+            $dbCreds
+        );
+
+        if (empty($testSiteAdminUsernameStmt)) {
+            $this->sayWarning('Cannot read the admin user details from the database.');
+            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
+            exit(1);
+        }
+
+        $testSiteAdminUsername = $testSiteAdminUsernameStmt->fetchColumn();
+
+        if (empty($testSiteWPUrl)) {
+            $this->sayWarning('Cannot fetch the administrator user information from the database.');
+
+            $testSiteAdminUsername = $this->ask(
+                'What is the login of the administrator user of the test site?',
+                'admin'
+            );
+
+            $testSiteAdminPassword = $this->ask(
+                'What is the password of the administrator user of the test site?',
+                'password'
+            );
+        } else {
+            $testSiteAdminPassword = $this->ask(
+                sprintf(
+                    'What is the password of the "%s" user of the test site?',
+                    $testSiteAdminUsername
+                ),
+                'password'
+            );
+        }
+
+        $siteData['testSiteAdminUsername'] = $testSiteAdminUsername;
+        $siteData['testSiteAdminPassword'] = $testSiteAdminPassword;
+
+        return $siteData;
+    }
+
+    protected function fetchDbData(\PDO $db, array &$dbCreds)
+    {
+        $data = [];
+        $tablePrefix = $dbCreds['table_prefix'];
+
+        list($testSiteDbName, $testDbName) = $this->tryCreateDb($db, $dbCreds);
+
+        $data['testSiteDbName'] = $testSiteDbName;
+        $data['testSiteDbHost'] = $dbCreds['DB_HOST'];
+        $data['testSiteDbUser'] = $dbCreds['DB_USER'];
+        $data['testSiteDbPassword'] = $dbCreds['DB_PASSWORD'];
+        $data['testSiteTablePrefix'] = $tablePrefix;
+        $data['testDbName'] = $testDbName;
+        $data['testDbHost'] = $dbCreds['DB_HOST'];
+        $data['testDbUser'] = $dbCreds['DB_USER'];
+        $data['testDbPassword'] = $dbCreds['DB_PASSWORD'];
+        $data['testTablePrefix'] = $tablePrefix;
+
+        return $data;
     }
 }
