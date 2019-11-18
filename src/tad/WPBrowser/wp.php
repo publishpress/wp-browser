@@ -143,7 +143,8 @@ function findWpDbCreds($wpRootDir)
  *
  * @return array The db credentials in the shape [$dsn, $user, $passwd].
  */
-function buildDbCredsFromWpCreds(array $dbCreds){
+function buildDbCredsFromWpCreds(array $dbCreds)
+{
     $dbName = isset($dbCreds['DB_NAME']) ? $dbCreds['DB_NAME'] : false;
     $dbHost = isset($dbCreds['DB_HOST']) ? $dbCreds['DB_HOST'] : 'localhost';
     list($dbHost, $dbPort) = strpos($dbHost, ':') > 1
@@ -154,10 +155,9 @@ function buildDbCredsFromWpCreds(array $dbCreds){
 
     if ($dbName) {
         $dsn = sprintf('mysql:dbname=%s;host=%s;port=%d', $dbName, $dbHost, $dbPort);
-    }else {
+    } else {
         $dsn = sprintf('mysql:host=%s;port=%d', $dbHost, $dbPort);
     }
 
     return [$dsn, $dbUser, $dbPass];
 }
-

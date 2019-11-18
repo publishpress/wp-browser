@@ -309,6 +309,7 @@ function docs($path = '/')
  *
  * @return string The current version of the package.
  */
-function version(){
-   return '2.2.31' ;
+function version()
+{
+    return '2.2.31' ;
 }

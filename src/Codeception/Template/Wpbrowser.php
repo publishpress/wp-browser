@@ -62,10 +62,7 @@ class Wpbrowser extends Bootstrap
         $this->parseNamespace();
         $this->parseActor();
 
-        $workDir = realpath($this->workDir);
-        $this->projectName = $workDir ?
-            slug(dirname($workDir), '_') :
-            $this->ask('What is the project name?', 'project');
+        $this->setupProjectName();
 
         if ($interactive) {
             $this->sayHi();
@@ -429,6 +426,8 @@ class Wpbrowser extends Bootstrap
             return $this->askForDbData();
         }
 
+        $tablePrefix = $dbCreds['table_prefix'];
+
         $db = tryDbConnection(...buildDbCredsFromWpCreds($dbCreds));
 
         if (!$db instanceof \PDO) {
@@ -447,16 +446,29 @@ class Wpbrowser extends Bootstrap
             }
         }
 
+        if ($db === false) {
+            $this->saySomethingNotWorking();
+            exit(1);
+        }
+
         $this->sayInfo(
-            'Successfully connected to the database using the credentials found in the wp-config.php file.'
+            'Successfully connected to the database.'
         );
 
-        $testDb = $this->tryCreateDb($db, $dbCreds);
+        list($testSiteDbName, $testDbName) = $this->tryCreateDb($db, $dbCreds);
 
-        if (!empty($testDb)) {
-            exit(0);
-        }
-        // @todo offer to use the credentials we found to setup the test database.
+        $data['testSiteDbName'] = $testSiteDbName;
+        $data['testSiteDbHost'] =$dbCreds['DB_HOST'];
+        $data['testSiteDbUser'] =$dbCreds['DB_USER'] ;
+        $data['testSiteDbPassword'] = $dbCreds['DB_PASSWORD'] ;
+        $data['testSiteTablePrefix'] = $tablePrefix;
+        $data['testDbName'] = $testDbName;
+        $data['testDbHost'] =$dbCreds['DB_HOST'];
+        $data['testDbUser'] =$dbCreds['DB_USER'] ;
+        $data['testDbPassword'] = $dbCreds['DB_PASSWORD'] ;
+        $data['testTablePrefix'] = $tablePrefix;
+
+        return $data;
     }
 
     /**
@@ -472,6 +484,11 @@ class Wpbrowser extends Bootstrap
         $db = false;
         $retries = 0;
         $tryCreds = $dbCreds;
+        $intersectMask = array_combine($mask, $mask);
+        if ($intersectMask === false) {
+            $intersectMask = [];
+        }
+
         do {
             if ($retries === 3) {
                 $this->say();
@@ -480,7 +497,7 @@ class Wpbrowser extends Bootstrap
                 exit(1);
             }
 
-            if ($retries !== 0 && isset($dbCreds)) {
+            if ($retries !== 0) {
                 $this->sayWarning(
                     sprintf(
                         'Could not connect to the database using these credentials:%s%s',
@@ -505,21 +522,27 @@ class Wpbrowser extends Bootstrap
             /** @noinspection CompactArgumentsInspection */
             $dbCreds = compact('DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD');
             $tryCreds = $mask ?
-                array_intersect_key($dbCreds, array_combine($mask, $mask))
+                array_intersect_key($dbCreds, $intersectMask)
                 : $dbCreds;
         } while ($retries++ < 3
             && !($db = tryDbConnection(...buildDbCredsFromWpCreds($tryCreds))) instanceof \PDO
         );
 
+        if ($db === false) {
+            $this->saySomethingNotWorking();
+            exit(1);
+        }
+
         return $db;
     }
 
-    protected function tryQuery($query, array $args = [], \PDO $db, array &$dbCreds)
+    protected function tryQuery($query, array $args, \PDO $db, array &$dbCreds)
     {
         $retries = 0;
         do {
             if ($retries === 3) {
-                $this->saySomethingNotWorkingAndExit();
+                $this->saySomethingNotWorking();
+                exit(1);
             }
 
             if (empty($args)) {
@@ -538,13 +561,12 @@ class Wpbrowser extends Bootstrap
         return $statement;
     }
 
-    protected function saySomethingNotWorkingAndExit()
+    protected function saySomethingNotWorking()
     {
         $this->say();
         $this->sayWarning('Something is not working, check the connections, credentials and try to run this ' .
             'initialization script again.');
         $this->say();
-        exit(1);
     }
 
     public function createGlobalConfig()
@@ -975,15 +997,32 @@ EOF;
 
     protected function tryCreateDb(\PDO $db, array &$dbCreds)
     {
-        $testDbName = $this->projectName;
-        $created = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testDbName}", [], $db, $dbCreds);
+        $testSiteDbName = slug(pathJoin($this->projectName, 'site_tests'), '_') ;
+        $testDbName = slug(pathJoin($this->projectName, 'tests'), '_') ;
 
-        if (!$created instanceof \PDOStatement) {
-            $this->saySomethingNotWorkingAndExit();
+        $createdSiteTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testSiteDbName}", [], $db, $dbCreds);
+        $createdTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testDbName}", [], $db, $dbCreds);
+
+        if (!($createdSiteTestDb instanceof \PDOStatement && $createdTestDb instanceof \PDOStatement)) {
+            $this->saySomethingNotWorking();
+            exit(1);
         }
 
-        $this->sayInfo("Created the {$testDbName} database.");
+        $this->sayInfo(sprintf('Created the "%s" and "%s" databases.', $testSiteDbName, $testDbName));
 
-        return $testDbName;
+        return [$testSiteDbName, $testDbName,];
+    }
+
+    protected function setupProjectName()
+    {
+        $workDirRealpath = realpath($this->workDir);
+        $this->projectName = $workDirRealpath ?
+            slug(basename($workDirRealpath), '_') :
+            slug($this->ask('What is the project name?', 'project'));
+
+        if (empty($this->projectName)) {
+            $this->sayWarning('Project name cannot be empty');
+            exit(1);
+        }
     }
 }
