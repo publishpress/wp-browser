@@ -5,24 +5,48 @@ namespace Codeception\Template;
 use Codeception\Exception\ModuleConfigException;
 use Dotenv\Dotenv;
 use Symfony\Component\Console\Exception\RuntimeException;
+use Symfony\Component\Console\Helper\QuestionHelper;
+use Symfony\Component\Console\Question\ChoiceQuestion;
 use Symfony\Component\Yaml\Yaml;
+use tad\WPBrowser\Exceptions\WpCliException;
+use tad\WPBrowser\Installation\Installation;
+use tad\WPBrowser\Installation\InstallationException;
+use tad\WPBrowser\Installation\NotFoundInstallation;
+use tad\WPBrowser\Monads\Maybe;
+use tad\WPBrowser\Project\Project;
+use tad\WPBrowser\Project\ProjectException;
 use tad\WPBrowser\Services\Db\PDOQueryRunner;
 use tad\WPBrowser\Template\Data;
 use tad\WPBrowser\Traits\WithCustomCliColors;
+use tad\WPBrowser\Traits\WithWpCli;
 use function tad\WPBrowser\buildDbCredsFromWpCreds;
+use function tad\WPBrowser\dbDropInForEnv;
 use function tad\WPBrowser\docs;
+use function tad\WPBrowser\dumpToFile;
+use function tad\WPBrowser\findPluginFile;
+use function tad\WPBrowser\findPluginFiles;
+use function tad\WPBrowser\findThemesInDir;
 use function tad\WPBrowser\findWordPressRootDir;
+use function tad\WPBrowser\findWpConfigFile;
 use function tad\WPBrowser\findWpDbCreds;
-use function tad\WPBrowser\normalizePath;
+use function tad\WPBrowser\getWpConfigConstant;
+use function tad\WPBrowser\getWpContentDir;
+use function tad\WPBrowser\importDump;
+use function tad\WPBrowser\pathNormalize;
 use function tad\WPBrowser\parseUrl;
 use function tad\WPBrowser\pathJoin;
+use function tad\WPBrowser\pathTail;
+use function tad\WPBrowser\putFileReplacement;
+use function tad\WPBrowser\renameFile;
 use function tad\WPBrowser\slug;
 use function tad\WPBrowser\tryDbConnection;
-use function tad\WPBrowser\version;
+use function tad\WPBrowser\tryTimes;
+use function WP_CLI\Utils\launch_editor_for_input;
 
 class Wpbrowser extends Bootstrap
 {
     use WithCustomCliColors;
+    use WithWpCli;
 
     /**
      * Whether to output during the bootstrap process or not.
@@ -59,6 +83,33 @@ class Wpbrowser extends Bootstrap
      */
     protected $queryRunner;
 
+    /**
+     * The db credentials that will work from the machine setting up the tests.
+     *
+     * @var array
+     */
+    protected $workingDbCreds;
+
+    /**
+     * The db credentials that will work from the machine setting up the tests, for the test database.
+     *
+     * @var array
+     */
+    protected $testDbCreds;
+    /**
+     * The project currently being tested.
+     *
+     * @var Project
+     */
+    protected $project;
+
+    /**
+     * The installation containing, or contained, by this project.
+     *
+     * @var Installation
+     */
+    protected $installation;
+
     public function setup()
     {
         // @todo update configuration to new flow.
@@ -70,11 +121,27 @@ class Wpbrowser extends Bootstrap
         $this->parseNamespace();
         $this->parseActor();
 
-        $this->setupProjectName();
+        try {
+            $this->project = new Project($this->workDir);
+        } catch (ProjectException $e) {
+            $this->sayError('Error while setting up the project: ' . $e->getMessage());
+            exit(1);
+        }
+
+        try {
+            $this->installation = new Installation($this->findWpRootDir());
+        } catch (InstallationException $e) {
+            $this->sayError('Error while collecting the WordPress installation data: ' . $e->getMessage());
+            exit(1);
+        }
 
         if ($interactive) {
             $this->sayHi();
-            $this->askForAcknowledgmentOrExit();
+
+            if (!$this->askForAcknowledgment()) {
+                $this->sayBye();
+                return;
+            }
         }
 
         // @todo inline explanations
@@ -100,6 +167,10 @@ class Wpbrowser extends Bootstrap
             $this->creatEnvFile($installationData);
             $this->loadEnvFile();
             $this->createSuites($installationData);
+            if ($interactive) {
+                $this->askToCreateDumpFile($installationData);
+                $this->sayDbRedirectionSnippet($installationData);
+            }
         } catch (ModuleConfigException $e) {
             $this->removeCreatedFiles();
             $this->sayError('Something is not ok in the modules configurations: check your answers and try again.');
@@ -112,27 +183,44 @@ class Wpbrowser extends Bootstrap
         $this->sayDone($interactive, $installationData);
     }
 
-    protected function askForAcknowledgmentOrExit()
+    protected function isInteractive()
     {
-        $this->say();
-        $acknowledge = $this->ask(
-            '<warning>'
-            . 'I acknowledge wp-browser should run on development servers only, '
-            . 'that I have made a backup of my files and database contents before proceeding.'
-            . '</warning>',
-            true
-        );
+        $this->quiet = (bool)$this->input->getOption('quiet');
+        $this->noInteraction = (bool)$this->input->getOption('no-interaction');
 
-        // @todo move this to later.
-//        $this->say();
-//        $this->sayInfo('If you want to automatically use a test database during acceptance and functional tests, '
-//            . 'read here:');
-//        $this->sayInfo('<bold>' . docs('/tutorials/using-diff-db-in-tests') . '</bold>');
-
-        if (!$acknowledge) {
-            $this->sayBye();
-            exit(0);
+        if ($this->noInteraction || $this->quiet) {
+            $interactive = false;
+            $this->input->setInteractive(false);
+        } else {
+            $interactive = true;
+            $this->input->setInteractive(true);
         }
+        return $interactive;
+    }
+
+    protected function parseNamespace()
+    {
+        if ($this->input->getOption('namespace')) {
+            $namespace = $this->input->getOption('namespace');
+            if (is_string($namespace)) {
+                $this->namespace = trim($namespace, '\\') . '\\';
+            }
+        }
+    }
+
+    protected function parseActor()
+    {
+        if ($this->input->hasOption('actor') && $this->input->getOption('actor')) {
+            $actor = $this->input->getOption('actor');
+            if (is_string($actor)) {
+                $this->actorSuffix = $actor;
+            }
+        }
+    }
+
+    protected function sayWarning($message)
+    {
+        $this->say("<warning>$message</warning>");
     }
 
     protected function say($message = '')
@@ -143,14 +231,92 @@ class Wpbrowser extends Bootstrap
         parent::say($message);
     }
 
-    protected function saySuccess($message)
+    protected function sayHi()
     {
-        $this->say("<ok>$message</ok>");
+        $this->say();
+        $this->sayTitle('wp-browser setup');
+        $this->say();
+        $this->sayInfo('by Luca Tumedei <luca@theAverageDev.com>');
+        $this->sayInfo('Docs: <bold>' . docs('/') . '</bold>');
     }
 
     protected function sayTitle($message)
     {
         $this->say("<bold>$message</bold>");
+    }
+
+    protected function askForAcknowledgment()
+    {
+        $this->say();
+        $this->sayWarning('This setup script can configure the test suites for you, ' .
+            'but will require root access to your site database.');
+        $this->sayInfo('Read more: <bold>' . docs('/getting-started/auto-configuration') . '</bold>');
+        return $this->ask(
+            '<warning>'
+            . 'I acknowledge wp-browser should run on development servers only, '
+            . 'that I have made a backup of my files and database contents before proceeding.'
+            . '</warning>',
+            true
+        );
+    }
+
+    protected function sayBye()
+    {
+        $this->say();
+        $this->sayInfo(
+            'Setup a WordPress installation and database dedicated to development and '
+            . 'restart this command when ready using `vendor/bin/codecept init wpbrowser`.'
+        );
+        $this->say();
+        $this->saySuccess('See you soon!');
+    }
+
+    protected function saySuccess($message)
+    {
+        $this->say();
+        $this->say("<ok>$message</ok>");
+        $this->say();
+    }
+
+    public function createGlobalConfig()
+    {
+        $basicConfig = [
+            'paths' => [
+                'tests' => 'tests',
+                'output' => $this->outputDir,
+                'data' => $this->dataDir,
+                'support' => $this->supportDir,
+                'envs' => $this->envsDir,
+            ],
+            'actor_suffix' => 'Tester',
+            'extensions' => [
+                'enabled' => ['Codeception\Extension\RunFailed'],
+                'commands' => $this->getAddtionalCommands(),
+            ],
+            'params' => [
+                trim($this->envFileName),
+            ],
+        ];
+
+        $str = Yaml::dump($basicConfig, 4);
+        if ($this->namespace) {
+            $namespace = rtrim($this->namespace, '\\');
+            $str = "namespace: $namespace\n" . $str;
+        }
+        $this->createFile('codeception.dist.yml', $str);
+    }
+
+    protected function getAddtionalCommands()
+    {
+        return [
+            'Codeception\\Command\\GenerateWPUnit',
+            'Codeception\\Command\\GenerateWPRestApi',
+            'Codeception\\Command\\GenerateWPRestController',
+            'Codeception\\Command\\GenerateWPRestPostTypeController',
+            'Codeception\\Command\\GenerateWPAjax',
+            'Codeception\\Command\\GenerateWPCanonical',
+            'Codeception\\Command\\GenerateWPXMLRPC',
+        ];
     }
 
     /**
@@ -193,13 +359,13 @@ class Wpbrowser extends Bootstrap
             ];
             $this->envFileName = '.env.testing';
         } else {
-            $installationData = $this->askForInstallationData();
+            $installationData = $this->gatherInstallationData();
         }
 
         return $installationData;
     }
 
-    protected function askForInstallationData()
+    protected function gatherInstallationData()
     {
         $installationData = [
             'activeModules' => [
@@ -213,101 +379,98 @@ class Wpbrowser extends Bootstrap
         $installationData['acceptanceSuite'] = 'acceptance';
         $installationData['functionalSuite'] = 'functional';
         $installationData['wpunitSuite'] = 'wpunit';
+        $installationData['acceptanceSuiteSlug'] = 'acceptance';
+        $installationData['functionalSuiteSlug'] = 'functional';
+        $installationData['wpunitSuiteSlug'] = 'wpunit';
         $this->envFileName = '.env.testing';
 
         $this->checkEnvFileExistence();
 
-        $this->say();
-        $installationData['wpRootFolder'] = normalizePath($this->ask(
-            'What is the WordPress root directory path (it should contain the wp-load.php file)?',
-            findWordPressRootDir(codecept_root_dir(), '/var/www/wp')
-        ));
-
-        if (is_dir(pathJoin($installationData['wpRootFolder'], '/wp-admin'))) {
-            $installationData['testSiteWpAdminPath'] = '/wp-admin';
-        } else {
-            $installationData['testSiteWpAdminPath'] = $this->ask(
-                'What is the path, relative to WordPress root URL, of the admin area of the test site?',
-                '/wp-admin'
-            );
+        if ($this->installation instanceof NotFoundInstallation) {
+            $this->say();
+            tryTimes(function () {
+                try {
+                    $this->installation = new Installation(pathNormalize($this->ask(
+                        'What is the WordPress root directory path (it should contain the wp-load.php file)?',
+                        '/var/www/wp'
+                    )));
+                } catch (InstallationException $e) {
+                    $this->sayError($e->getMessage());
+                }
+            });
+            if ($this->installation instanceof Installation) {
+                exit(1);
+            };
         }
-        $normalizedAdminPath = trim(normalizePath($installationData['testSiteWpAdminPath']), '/');
-        $installationData['testSiteWpAdminPath'] = '/' . $normalizedAdminPath;
 
-        $this->say();
-        $this->sayInfo(
-            'To setup the database for you this script requires full access to the database (as "root" user).'
-        );
-        $this->sayInfo('You can answer "no" to provide the information manually.');
-        // @todo create the /getting-started/auto-configuration doc
-        $this->sayInfo('Read more: <bold>'.docs('/getting-started/auto-configuration').'</bold>');
+        $installationData['wpRootFolder'] = $this->installation->getDir('/');
+        $installationData['testSiteWpAdminPath']  = $this->installation->getWpAdminPath();
 
-        $autopilot = $this->ask(
-            '<warning>'
-            . 'Do you want to allow this script to access your database with all privileges?'
-            . '</warning>',
-            true
-        );
+        $installationData['autopilot'] = true;
 
-        if (!$autopilot) {
-            $dbData = $this->askForDbData();
-            $siteData = $this->askForSiteData($installationData);
-        } else {
-            list($dbData, $siteData) = $this->fetchDbAndSiteData($installationData['wpRootFolder']);
-        }
+        list($dbData, $siteData) = $this->fetchDbAndSiteData($installationData['wpRootFolder']);
 
         $installationData = array_merge($installationData, $dbData, $siteData);
 
-        $sut = '';
+        $this->sayInfo('Choose "both" if you\'re setting up  tests for a site.');
+        $projectChoices = ['plugin', 'theme', 'both/site'];
+        $projectType = $this->ask(
+            'Are you testing a plugin, a theme or a combination of both?',
+            $projectChoices
+        );
 
-        while (!in_array($sut, ['plugin', 'theme', 'both'])) {
-            $sut = $this->ask('Are you testing a plugin, a theme or a combination of both (both)?', 'plugin');
-        }
+        $availablePlugins = array_map(static function ($pluginFile) {
+            return pathTail($pluginFile, 2);
+        }, findPluginFiles($installationData['wpRootFolder']));
+        $availableThemes = array_map('dirname', findThemesInDir($installationData['wpRootFolder']));
 
         $installationData['plugins'] = [];
-        if ($sut === 'plugin') {
+        if ($projectType === 'plugin') {
+            $this->sayInfo('The following answer would be "woocommerce/woocommerce.php" for the WooCommerce plugin.');
             $installationData['mainPlugin'] = $this->ask(
-                'What is the <comment>folder/plugin.php</comment> name of the plugin?',
-                'my-plugin/my-plugin.php'
+                'What is the <bold>folder/plugin.php</bold> name of the plugin?',
+                pathTail(findPluginFile($this->workDir), 2) ?: 'my-plugin/my-plugin.php'
             );
-        } elseif ($sut === 'theme') {
-            $isChildTheme = $this->ask('Are you developing a child theme?', 'no');
-            if (preg_match('/^(y|Y)/', $isChildTheme)) {
-                $installationData['parentTheme'] = $this->ask(
-                    'What is the slug of the parent theme?',
-                    'twentyseventeen'
-                );
-            }
-            $installationData['theme'] = $this->ask('What is the slug of the theme?', 'my-theme');
         } else {
-            $isChildTheme = $this->ask('Are you using a child theme?', 'no');
-            if (preg_match('/^(y|Y)/', $isChildTheme)) {
+            if (!$this->ask('Are you developing or using a child theme?', false)) {
                 $installationData['parentTheme'] = $this->ask(
                     'What is the slug of the parent theme?',
-                    'twentyseventeen'
+                    $availableThemes
                 );
             }
-            $installationData['theme'] = $this->ask('What is the slug of the theme you are using?', 'my-theme');
+            $installationData['theme'] = $this->ask('What is the slug of the theme?', $availableThemes);
         }
 
         $activateFurtherPlugins = $this->ask(
             'Does your project needs additional plugins to be activated to work?',
-            'no'
+            false
         );
 
-        if (preg_match('/^(y|Y)/', $activateFurtherPlugins)) {
+        if ($activateFurtherPlugins) {
+            $this->sayInfo('Plugins found in the WordPress plugins directory.');
+            $this->sayInfo('If a required plugin was not found, you can enter it manually.');
+
+
+            $availablePlugins = array_diff($availablePlugins, [$installationData['mainPlugin']]);
+
             do {
-                $plugin = $this->ask(
-                    'Please enter the plugin <comment>folder/plugin.php</comment> (leave blank when done)',
-                    ''
+                $activatePlugin = $this->ask(
+                    'Please select the plugins to activate in order:',
+                    array_merge($availablePlugins, ['manual', 'done'])
                 );
-                $installationData['plugins'][] = $plugin;
-            } while (!empty($plugin));
+                if ('manual' === $activatePlugin) {
+                    $activatePlugin = $this->ask('Enter the <bold>dir/file.php</bold> plugin to activate:');
+                }
+
+                $installationData['plugins'] = $activatePlugin;
+            } while ($activatePlugin && $activatePlugin !== 'done');
         }
 
-        $installationData['plugins'] = array_filter($installationData['plugins']);
+        $installationData['plugins'] = !empty($installationData['plugins']) ?
+            array_filter($installationData['plugins'])
+            : [];
         if (!empty($installationData['mainPlugin'])) {
-            $installationData['plugins'] = $installationData['mainPlugin'];
+            $installationData['plugins'][] = $installationData['mainPlugin'];
         }
 
         return $installationData;
@@ -323,11 +486,6 @@ class Wpbrowser extends Bootstrap
                 . PHP_EOL . "Remove the existing {$basename} file or specify a different name for the env file.";
             throw new RuntimeException($message);
         }
-    }
-
-    protected function sayWarning($message)
-    {
-        $this->say("<warning>$message</warning>");
     }
 
     protected function askForDbData()
@@ -397,6 +555,39 @@ class Wpbrowser extends Bootstrap
         return $data;
     }
 
+    protected function askForSiteData(array $installationData)
+    {
+        $siteData = [];
+        $siteData['testSiteWpUrl'] = $this->ask(
+            'What is the URL the test site?',
+            'http://wp.test'
+        );
+        $siteData['testSiteWpUrl'] = rtrim($siteData['testSiteWpUrl'], '/');
+        $url = parseUrl($siteData['testSiteWpUrl']);
+        $siteData['urlScheme'] = empty($url['scheme']) ? 'http' : $url['scheme'];
+        $siteData['testSiteWpDomain'] = empty($url['host']) ? 'example.com' : $url['host'];
+        $siteData['urlPort'] = empty($url['port']) ? '' : ':' . $url['port'];
+        $siteData['urlPath'] = empty($url['path']) ? '' : $url['path'];
+        $adminEmailCandidate = "admin@{$siteData['testSiteWpDomain']}";
+        $siteData['testSiteAdminEmail'] = $this->ask(
+            'What is the email of the test site WordPress administrator?',
+            $adminEmailCandidate
+        );
+
+        $siteData['title'] = $this->ask('What is the title of the test site?', 'Test');
+
+        $siteData['testSiteAdminUsername'] = $this->ask(
+            'What is the login of the administrator user of the test site?',
+            'admin'
+        );
+        $siteData['testSiteAdminPassword'] = $this->ask(
+            'What is the password of the administrator user of the test site?',
+            'password'
+        );
+
+        return $siteData;
+    }
+
     protected function fetchDbAndSiteData($wpRootFolder)
     {
         $this->say();
@@ -415,19 +606,17 @@ class Wpbrowser extends Bootstrap
         $db = tryDbConnection(...buildDbCredsFromWpCreds($dbCreds));
 
         if (!$db instanceof \PDO) {
-            $this->sayWarning(
+            $this->sayError(
                 sprintf(
                     "Unable to connect to the database using the credentials:%s%s",
                     PHP_EOL,
-                    Yaml::dump(array_diff_key($dbCreds, ['DB_NAME'=>1,'table_prefix'=>1]))
+                    Yaml::dump(array_diff_key($dbCreds, ['DB_NAME' => 1, 'table_prefix' => 1]))
                 )
             );
             $this->sayInfo('Possible causes: the "DB_HOST" is not correct for the machine running the tests, ' .
                 'the database does not exist or the user does not have access to the database.');
-            $this->sayInfo('Read more: <bold>'.docs('/getting-started/auto-configuration').'</bold>');
-            if ($this->ask('Would you like to try using different credentials?', true)) {
-                $db = $this->askForDbCreds($dbCreds, ['DB_HOST','DB_USER','DB_PASSWORD']);
-            }
+            $this->sayInfo('Read more: <bold>' . docs('/getting-started/auto-configuration') . '</bold>');
+            $db = $this->askForDbCreds($dbCreds, ['DB_HOST', 'DB_USER', 'DB_PASSWORD']);
         }
 
         if ($db === false) {
@@ -446,7 +635,14 @@ class Wpbrowser extends Bootstrap
         $dbData = $this->fetchDbData($db, $fullDdCreds);
         $siteData = $this->fetchSiteData($db, $fullDdCreds);
 
+        $this->workingDbCreds =  $fullDdCreds;
+
         return [$dbData, $siteData];
+    }
+
+    protected function sayError($message)
+    {
+        $this->say("<error>{$message}</error>");
     }
 
     /**
@@ -476,7 +672,7 @@ class Wpbrowser extends Bootstrap
             }
 
             if ($retries !== 0) {
-                $this->sayWarning(
+                $this->sayError(
                     sprintf(
                         'Could not connect to the database using these credentials:%s%s',
                         PHP_EOL,
@@ -503,7 +699,7 @@ class Wpbrowser extends Bootstrap
                 array_intersect_key($dbCreds, $intersectMask)
                 : $dbCreds;
         } while ($retries++ < 3
-            && !($db = tryDbConnection(...buildDbCredsFromWpCreds($tryCreds))) instanceof \PDO
+        && !($db = tryDbConnection(...buildDbCredsFromWpCreds($tryCreds))) instanceof \PDO
         );
 
         if ($db === false) {
@@ -512,6 +708,53 @@ class Wpbrowser extends Bootstrap
         }
 
         return $db;
+    }
+
+    protected function saySomethingNotWorking()
+    {
+        $this->say();
+        $this->sayWarning('Something is not working, check the connections, credentials and try to run this ' .
+            'initialization script again.');
+        $this->say();
+    }
+
+    protected function fetchDbData(\PDO $db, array &$dbCreds)
+    {
+        $data = [];
+        $tablePrefix = $dbCreds['table_prefix'];
+
+        list($testSiteDbName, $testDbName) = $this->tryCreateDb($db, $dbCreds);
+
+        $data['testSiteDbName'] = $testSiteDbName;
+        $data['testSiteDbHost'] = $dbCreds['DB_HOST'];
+        $data['testSiteDbUser'] = $dbCreds['DB_USER'];
+        $data['testSiteDbPassword'] = $dbCreds['DB_PASSWORD'];
+        $data['testSiteTablePrefix'] = $tablePrefix;
+        $data['testDbName'] = $testDbName;
+        $data['testDbHost'] = $dbCreds['DB_HOST'];
+        $data['testDbUser'] = $dbCreds['DB_USER'];
+        $data['testDbPassword'] = $dbCreds['DB_PASSWORD'];
+        $data['testTablePrefix'] = $tablePrefix;
+
+        return $data;
+    }
+
+    protected function tryCreateDb(\PDO $db, array &$dbCreds)
+    {
+        $testSiteDbName = slug(pathJoin($this->projectName, 'site_tests'), '_');
+        $testDbName = slug(pathJoin($this->projectName, 'tests'), '_');
+
+        $createdSiteTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testSiteDbName}", [], $dbCreds);
+        $createdTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testDbName}", [], $dbCreds);
+
+        if (!($createdSiteTestDb instanceof \PDOStatement && $createdTestDb instanceof \PDOStatement)) {
+            $this->saySomethingNotWorking();
+            exit(1);
+        }
+
+        $this->saySuccess(sprintf('Created the "%s" and "%s" databases.', $testSiteDbName, $testDbName));
+
+        return [$testSiteDbName, $testDbName,];
     }
 
     protected function tryQuery($query, array $args, array &$dbCreds)
@@ -536,54 +779,105 @@ class Wpbrowser extends Bootstrap
         return $this->queryRunner->run($query, $args, $retry, $fail);
     }
 
-    protected function saySomethingNotWorking()
+    protected function fetchSiteData(\PDO $db, array &$dbCreds)
     {
-        $this->say();
-        $this->sayWarning('Something is not working, check the connections, credentials and try to run this ' .
-            'initialization script again.');
-        $this->say();
-    }
+        $siteData = [];
 
-    public function createGlobalConfig()
-    {
-        $basicConfig = [
-            'paths' => [
-                'tests' => 'tests',
-                'output' => $this->outputDir,
-                'data' => $this->dataDir,
-                'support' => $this->supportDir,
-                'envs' => $this->envsDir,
-            ],
-            'actor_suffix' => 'Tester',
-            'extensions' => [
-                'enabled' => ['Codeception\Extension\RunFailed'],
-                'commands' => $this->getAddtionalCommands(),
-            ],
-            'params' => [
-                trim($this->envFileName),
-            ],
-        ];
+        $useSiteDbStmt = $this->tryQuery("USE {$dbCreds['DB_NAME']}", [], $dbCreds);
 
-        $str = Yaml::dump($basicConfig, 4);
-        if ($this->namespace) {
-            $namespace = rtrim($this->namespace, '\\');
-            $str = "namespace: $namespace\n" . $str;
+        if ($useSiteDbStmt === false) {
+            $this->sayWarning('Cannot fetch the value of the "siteurl" option from the database.');
+            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
+            exit(1);
         }
-        $this->createFile('codeception.dist.yml', $str);
-        $this->say('codeception.dist.yml created       <- global configuration');
-    }
 
-    protected function getAddtionalCommands()
-    {
-        return [
-            'Codeception\\Command\\GenerateWPUnit',
-            'Codeception\\Command\\GenerateWPRestApi',
-            'Codeception\\Command\\GenerateWPRestController',
-            'Codeception\\Command\\GenerateWPRestPostTypeController',
-            'Codeception\\Command\\GenerateWPAjax',
-            'Codeception\\Command\\GenerateWPCanonical',
-            'Codeception\\Command\\GenerateWPXMLRPC',
-        ];
+        $options = $dbCreds['table_prefix'] . 'options';
+        $testSiteWPUrlStmt = $this->tryQuery(
+            "SELECT option_value FROM {$options} WHERE option_name = ?",
+            ['siteurl'],
+            $dbCreds
+        );
+
+        $testSiteWPUrl = $testSiteWPUrlStmt->fetchColumn();
+
+        if (empty($testSiteWPUrl)) {
+            $this->sayWarning('Cannot fetch the value of the "siteurl" option from the database.');
+            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
+            exit(1);
+        }
+
+        $siteData['testSiteWpUrl'] = $testSiteWPUrl;
+        $siteData['testSiteWpUrl'] = rtrim($siteData['testSiteWpUrl'], '/');
+        $url = parseUrl($siteData['testSiteWpUrl']);
+        $siteData['urlScheme'] = empty($url['scheme']) ? 'http' : $url['scheme'];
+        $siteData['testSiteWpDomain'] = empty($url['host']) ? 'example.com' : $url['host'];
+        $siteData['urlPort'] = empty($url['port']) ? '' : ':' . $url['port'];
+        $siteData['urlPath'] = empty($url['path']) ? '' : $url['path'];
+        $adminEmailCandidate = "admin@{$siteData['testSiteWpDomain']}";
+        $siteData['testSiteAdminEmail'] = filter_var($adminEmailCandidate, FILTER_VALIDATE_EMAIL) ?
+            $adminEmailCandidate
+            : $this->ask('What is the email of the test site WordPress administrator?');
+
+        $siteData['title'] = $this->projectName . ' test';
+
+        $usermeta = $dbCreds['table_prefix'] . 'usermeta';
+        $testSiteAdminIdStmt = $this->tryQuery(
+            "SELECT user_id FROM {$usermeta} WHERE meta_key = ? and meta_value like ?;",
+            ['wp_capabilities', '%s:13:"administrator";%'],
+            $dbCreds
+        );
+
+        if (empty($testSiteAdminIdStmt)) {
+            $this->sayWarning('Cannot read the admin user details from the database.');
+            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
+            exit(1);
+        }
+
+        $testSiteAdminUserId = $testSiteAdminIdStmt->fetchColumn();
+
+        $users = $dbCreds['table_prefix'] . 'users';
+        $testSiteAdminUsernameStmt = $this->tryQuery(
+            "SELECT user_login FROM {$users} WHERE ID = ?;",
+            [(int)$testSiteAdminUserId],
+            $dbCreds
+        );
+
+        if (empty($testSiteAdminUsernameStmt)) {
+            $this->sayWarning('Cannot read the admin user details from the database.');
+            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
+            exit(1);
+        }
+
+        $installation->haveUserInDatabase('test_admin', 'administrator', 'password');
+
+        $testSiteAdminUsername = $testSiteAdminUsernameStmt->fetchColumn();
+
+        if (empty($testSiteWPUrl)) {
+            $this->sayWarning('Cannot fetch the administrator user information from the database.');
+
+            $testSiteAdminUsername = $this->ask(
+                'What is the login of the administrator user of the test site?',
+                'admin'
+            );
+
+            $testSiteAdminPassword = $this->ask(
+                'What is the password of the administrator user of the test site?',
+                'password'
+            );
+        } else {
+            $testSiteAdminPassword = $this->ask(
+                sprintf(
+                    'What is the password of the "%s" user of the test site?',
+                    $testSiteAdminUsername
+                ),
+                'password'
+            );
+        }
+
+        $siteData['testSiteAdminUsername'] = $testSiteAdminUsername;
+        $siteData['testSiteAdminPassword'] = $testSiteAdminPassword;
+
+        return $siteData;
     }
 
     /**
@@ -658,6 +952,23 @@ class Wpbrowser extends Bootstrap
     {
         $dotEnv = Dotenv::create($this->workDir, $this->envFileName);
         $dotEnv->load();
+    }
+
+    /**
+     * ${CARET}
+     *
+     * @param array $installationData
+     * @since TBD
+     *
+     */
+    protected function createSuites(array $installationData)
+    {
+        $this->say();
+        $this->createUnitSuite();
+        $this->createWpUnitSuite(ucwords($installationData['wpunitSuite']), $installationData);
+        $this->createFunctionalSuite(ucwords($installationData['functionalSuite']), $installationData);
+        $this->createAcceptanceSuite(ucwords($installationData['acceptanceSuite']), $installationData);
+        $this->saySuccess('All ready to test your WordPress project.');
     }
 
     protected function createWpUnitSuite($actor = 'Wpunit', array $installationData = [])
@@ -805,6 +1116,50 @@ EOF;
         $this->createSuite($installationData['acceptanceSuiteSlug'], $actor, $suiteConfig);
     }
 
+    protected function sayDone($interactive, array $installationData)
+    {
+        if (!$interactive) {
+            $this->saySuccess("Codeception has created the files for the {$installationData['acceptanceSuiteSlug']}, "
+                . "{$installationData['functionalSuiteSlug']}, WordPress unit and unit suites "
+                . 'but the modules are not activated.');
+        }
+
+        $this->sayInfo('Some commands have been added in the Codeception configuration file: '
+            . 'check them out using <bold>codecept --help</bold>');
+        $this->say();
+
+        $autopilot = !empty($installationData['autopilot']);
+
+        $this->say("<bold>Next steps:</bold>");
+        if (!$autopilot) {
+            $this->say('0. <bold>Create the databases used by the modules</bold>; wp-browser will not do it for you!');
+            $this->say('1. <bold>Install and configure WordPress</bold> activating the theme and plugins you need to create'
+                . ' a database dump in <bold>tests/_data/dump.sql</bold>');
+            $this->say("2. Edit <bold>tests/{$installationData['acceptanceSuiteSlug']}.suite.yml</bold> to make sure WPDb "
+                . 'and WPBrowser configurations match your local setup; change WPBrowser to WPWebDriver to '
+                . 'enable browser testing');
+            $this->say("3. Edit <bold>tests/{$installationData['functionalSuiteSlug']}.suite.yml</bold> to make sure "
+                . 'WordPress and WPDb configurations match your local setup');
+            $this->say("4. Edit <bold>tests/{$installationData['wpunitSuiteSlug']}.suite.yml</bold> to make sure WPLoader "
+                . 'configuration matches your local setup');
+            $this->say("5. Create your first {$installationData['acceptanceSuiteSlug']} tests using <bold>codecept "
+                . "g:cest {$installationData['acceptanceSuiteSlug']} WPFirst</bold>");
+            $this->say("6. Write a test in <bold>tests/{$installationData['acceptanceSuiteSlug']}/WPFirstCest.php</bold>");
+            $this->say("7. Run tests using: <bold>codecept run {$installationData['acceptanceSuiteSlug']}</bold>");
+        } else {
+            $this->say("1. Create your first {$installationData['acceptanceSuiteSlug']} tests using <bold>codecept "
+                . "g:cest {$installationData['acceptanceSuiteSlug']} WPFirst</bold>");
+            $this->say("2. Write a test in <bold>tests/{$installationData['acceptanceSuiteSlug']}/WPFirstCest.php</bold>");
+            $this->say("3. Run tests using: <bold>codecept run {$installationData['acceptanceSuiteSlug']}</bold>");
+        }
+
+        $this->say();
+        $this->sayInfo('Note: <bold>due to WordPress reliance on globals and constants you should not run all the ' .
+            'suites at the same time!</bold>');
+        $this->sayInfo('Run each suite separately, like this: <bold>codecept run unit && codecept run '
+            . "{$installationData['wpunitSuiteSlug']}</bold>");
+    }
+
     /**
      * Sets the template working directory.
      *
@@ -838,325 +1193,224 @@ EOF;
         }
     }
 
-    protected function sayBye()
+    protected function askMultiselectQuestion($question, array $answer)
     {
-        $this->say();
-        $this->sayInfo(
-            'Setup a WordPress installation and database dedicated to development and '
-            . 'restart this command when ready using `vendor/bin/codecept init wpbrowser`.'
-        );
-        $this->say();
-        $this->saySuccess('See you soon!');
+        $question = "? $question";
+        $dialog = new QuestionHelper();
+        $choiceQuestion = new ChoiceQuestion($question, $answer, 0);
+        $choiceQuestion->setMultiselect(true);
+        $dialog->ask($this->input, $this->output, $choiceQuestion);
     }
 
-    protected function sayHi()
+    protected function askToCreateDumpFile(array $installationData)
     {
-        $this->say();
-        $this->sayTitle('wp-browser '.version().' setup');
-        $this->say();
-        $this->sayInfo('by Luca Tumedei <luca@theAverageDev.com>');
-        $this->sayInfo('Docs: <bold>' . docs('/') . '</bold>');
-    }/**
- * ${CARET}
- *
- * @param array $installationData
- * @since TBD
- *
- */
-    protected function createSuites(array $installationData)
-    {
-        $this->createUnitSuite();
-        $this->say("tests/unit created                 <- unit tests");
-        $this->say("tests/unit.suite.yml written       <- unit tests suite configuration");
-        $this->createWpUnitSuite(ucwords($installationData['wpunitSuite']), $installationData);
-        $this->say("tests/{$installationData['wpunitSuiteSlug']} created               "
-            . '<- WordPress unit and integration tests');
-        $this->say("tests/{$installationData['wpunitSuiteSlug']}.suite.yml written     "
-            . '<- WordPress unit and integration tests suite configuration');
-        $this->createFunctionalSuite(ucwords($installationData['functionalSuite']), $installationData);
-        $this->say("tests/{$installationData['functionalSuiteSlug']} created           "
-            . "<- {$installationData['functionalSuiteSlug']} tests");
-        $this->say("tests/{$installationData['functionalSuiteSlug']}.suite.yml written "
-            . "<- {$installationData['functionalSuiteSlug']} tests suite configuration");
-        $this->createAcceptanceSuite(ucwords($installationData['acceptanceSuite']), $installationData);
-        $this->say("tests/{$installationData['acceptanceSuiteSlug']} created           "
-            . "<- {$installationData['acceptanceSuiteSlug']} tests");
-        $this->say("tests/{$installationData['acceptanceSuiteSlug']}.suite.yml written "
-            . "<- {$installationData['acceptanceSuiteSlug']} tests suite configuration");
-    }
+        $askToCreateDbDump = function () use ($installationData) {
+            return $this->ask('Would you like to create the database dump for the tests now?', true)
+                ? $installationData : false;
+        };
 
-    protected function sayError($message)
-    {
-        $this->say("<error>{$message}</error>");
-    }
+        $dumpFile = codecept_root_dir('db-backup.sql');
 
-    protected function sayDone($interactive, array $installationData)
-    {
-        $this->say('---');
-        $this->say();
-        if ($interactive) {
-            $this->saySuccess("Codeception is installed for {$installationData['acceptanceSuiteSlug']}, "
-                . "{$installationData['functionalSuiteSlug']}, and WordPress unit testing");
-        } else {
-            $this->saySuccess("Codeception has created the files for the {$installationData['acceptanceSuiteSlug']}, "
-                . "{$installationData['functionalSuiteSlug']}, WordPress unit and unit suites "
-                . 'but the modules are not activated.');
-        }
-        $this->sayInfo('Some commands have been added in the Codeception configuration file: '
-            . 'check them out using <comment>codecept --help</comment>');
-        $this->say('---');
-        $this->say();
+        $dumpDbToFile = function (array $installationData, $dumpFile) {
+            $dumped = dumpToFile(buildDbCredsFromWpCreds($this->workingDbCreds), $dumpFile);
 
-        $this->say("<bold>Next steps:</bold>");
-        $this->say('0. <bold>Create the databases used by the modules</bold>; wp-browser will not do it for you!');
-        $this->say('1. <bold>Install and configure WordPress</bold> activating the theme and plugins you need to create'
-            . ' a database dump in <comment>tests/_data/dump.sql</comment>');
-        $this->say("2. Edit <bold>tests/{$installationData['acceptanceSuiteSlug']}.suite.yml</bold> to make sure WPDb "
-            . 'and WPBrowser configurations match your local setup; change WPBrowser to WPWebDriver to '
-            . 'enable browser testing');
-        $this->say("3. Edit <bold>tests/{$installationData['functionalSuiteSlug']}.suite.yml</bold> to make sure "
-            . 'WordPress and WPDb configurations match your local setup');
-        $this->say("4. Edit <bold>tests/{$installationData['wpunitSuiteSlug']}.suite.yml</bold> to make sure WPLoader "
-            . 'configuration matches your local setup');
-        $this->say("5. Create your first {$installationData['acceptanceSuiteSlug']} tests using <comment>codecept "
-            . "g:cest {$installationData['acceptanceSuiteSlug']} WPFirst</comment>");
-        $this->say("6. Write a test in <bold>tests/{$installationData['acceptanceSuiteSlug']}/WPFirstCest.php</bold>");
-        $this->say("7. Run tests using: <comment>codecept run {$installationData['acceptanceSuiteSlug']}</comment>");
-        $this->say('---');
-        $this->say();
-        $this->sayInfo('Please note: <bold>due to WordPress extended use of globals and constants you should avoid ' .
-            'running all the suites at the same time!</bold>');
-        $this->sayInfo('Run each suite separately, like this: <comment>codecept run unit && codecept run '
-            . "{$installationData['wpunitSuiteSlug']}</comment>, to avoid problems.");
-    }/**
- * ${CARET}
- *
- * @return bool
- * @since TBD
- *
- */
-    protected function isInteractive()
-    {
-        $this->quiet = (bool)$this->input->getOption('quiet');
-        $this->noInteraction = (bool)$this->input->getOption('no-interaction');
-
-        if ($this->noInteraction || $this->quiet) {
-            $interactive = false;
-            $this->input->setInteractive(false);
-        } else {
-            $interactive = true;
-            $this->input->setInteractive(true);
-        }
-        return $interactive;
-    }
-
-    protected function parseNamespace()
-    {
-        if ($this->input->getOption('namespace')) {
-            $namespace = $this->input->getOption('namespace');
-            if (is_string($namespace)) {
-                $this->namespace = trim($namespace, '\\') . '\\';
+            if (false === $dumped) {
+                $this->sayError('Something went wrong while trying to dump the current database.');
+                return false;
             }
-        }
-    }
 
-    protected function parseActor()
-    {
-        if ($this->input->hasOption('actor') && $this->input->getOption('actor')) {
-            $actor = $this->input->getOption('actor');
-            if (is_string($actor)) {
-                $this->actorSuffix = $actor;
+            return $installationData;
+        };
+
+
+        $this->testDbCreds = $this->workingDbCreds;
+        $this->testDbCreds['DB_NAME'] = $installationData['testSiteDbName'];
+
+        $cloneDb = function (array $installationData, $dumpFile) {
+            $imported = importDump(buildDbCredsFromWpCreds($this->testDbCreds), $dumpFile);
+
+            if (false === $imported) {
+                $this->sayError('Something went wrong while trying to clone the current database.');
+                return false;
             }
-        }
+
+            return $installationData;
+        };
+
+        $dbDropIn = pathJoin(getWpContentDir($installationData['wpRootFolder']), '/db.php');
+
+        $placeDbDropin = function (array $installationData, $dbDropIn) {
+            return putFileReplacement(
+                $dbDropIn,
+                dbDropInForEnv(),
+                function ($message) {
+                    $this->sayError('Error while creating the wp-db drop-in file: ' . $message);
+                }
+            ) ? $installationData : false;
+        };
+
+        $prepareDump = function (array $installationData) {
+            $this->setUpWpCli($installationData['wpRootFolder']);
+
+            $testDbEnv = [
+                'WP_DB_USER' => $this->testDbCreds['DB_USER'],
+                'WP_DB_HOST' => $this->testDbCreds['DB_HOST'],
+                'WP_DB_NAME' => $this->testDbCreds['DB_NAME'],
+                'WP_DB_PASSWORD' => $this->testDbCreds['DB_PASSWORD'],
+            ];
+
+            $plugins = $installationData['plugins'];
+            $commands = [
+                // Empty the site.
+                ['site', 'empty', '--yes', '--uploads'],
+                // Activate plugins, if required.
+                count($plugins) ? array_merge(['plugin', 'activate'], $plugins) : false,
+                // Activate themes, if  required.
+                !empty($installationData['theme']) ? ['theme', 'activate', $installationData['theme']] : false,
+                // Flush rewrites.
+                ['rewrite', 'flush'],
+            ];
+
+            foreach (array_filter($commands) as $command) {
+                try {
+                    $this->sayInfo('Running command: wp ' . implode(' ', $command));
+                    $commandProcess = $this->executeWpCliCommand($command, 120, $testDbEnv);
+                } catch (WpCliException $e) {
+                    return false;
+                }
+                if ($commandProcess->getExitCode() !== 0) {
+                    $this->sayError('Error: ' . $commandProcess->getErrorOutput());
+                    return false;
+                }
+            }
+
+            return $installationData;
+        };
+
+        $dumpTestDbToFile = function (array $installationData) {
+            $this->sayInfo('Dumping database to file.');
+            $dumpFile = pathJoin($this->workDir, 'tests/_data/dump.sql');
+            return dumpToFile(buildDbCredsFromWpCreds($this->testDbCreds), $dumpFile) ? $installationData : false;
+        };
+
+        $removeDbDropin = function (array $installationData, $dbDropIn) {
+            return renameFile(
+                $dbDropIn. '.bak',
+                $dbDropIn,
+                function ($message) {
+                    $this->sayError('Error while restoring the wp-db drop-in file: ' . $message);
+                }
+            ) ? $installationData : false;
+        };
+
+        $saySuccess = function () {
+            $this->saySuccess('Database dump created.');
+            return false;
+        };
+
+        $sayFailed = function () {
+            $this->sayWarning('You will need to create a database dump manually and save it to "tests/_data/dump.sql"' .
+                ' before running the tests!');
+
+            // @todo write this!
+            $this->sayInfo('Read more: <bold>' . docs('/getting-started/initial-database-dump') . '</bold>');
+        };
+
+        Maybe::create($this->workingDbCreds)
+            ->bind($askToCreateDbDump)
+            ->bind($dumpDbToFile, [$dumpFile])
+            ->bind($cloneDb, [$dumpFile])
+            ->bind($placeDbDropin, [$dbDropIn])
+            ->bind($prepareDump)
+            ->bind($dumpTestDbToFile)
+            ->bind($removeDbDropin, [$dbDropIn])
+            ->then($saySuccess, $sayFailed);
     }
 
-    protected function tryCreateDb(\PDO $db, array &$dbCreds)
+
+    protected function sayDbRedirectionSnippet(array $installationData)
     {
-        $testSiteDbName = slug(pathJoin($this->projectName, 'site_tests'), '_') ;
-        $testDbName = slug(pathJoin($this->projectName, 'tests'), '_') ;
+        $wpRootDir = $installationData['wpRootFolder'];
+        $wpConfigFile = findWpConfigFile($wpRootDir);
+        $wpConfigContents = file_get_contents($wpConfigFile);
+        $testDbName = $this->testDbCreds['DB_NAME'];
+        $dbName = getWpConfigConstant($wpRootDir, 'DB_NAME');
+        $replacementSnippet = <<< PHP
+if( isset( \$_SERVER['HTTP_X_TEST_REQUEST'] ) && \$_SERVER['HTTP_X_TEST_REQUEST'] ) {
+      define( 'DB_NAME', '{$testDbName}' );
+} else {
+      define( 'DB_NAME', '{$dbName}' );
+}
+PHP;
 
-        $createdSiteTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testSiteDbName}", [], $dbCreds);
-        $createdTestDb = $this->tryQuery("CREATE DATABASE IF NOT EXISTS {$testDbName}", [], $dbCreds);
-
-        if (!($createdSiteTestDb instanceof \PDOStatement && $createdTestDb instanceof \PDOStatement)) {
-            $this->saySomethingNotWorking();
-            exit(1);
-        }
-
-        $this->sayInfo(sprintf('Created the "%s" and "%s" databases.', $testSiteDbName, $testDbName));
-
-        return [$testSiteDbName, $testDbName,];
-    }
-
-    protected function setupProjectName()
-    {
-        $workDirRealpath = realpath($this->workDir);
-        $this->projectName = $workDirRealpath ?
-            slug(basename($workDirRealpath), '_') :
-            slug($this->ask('What is the project name?', 'project'));
-
-        if (empty($this->projectName)) {
-            $this->sayWarning('Project name cannot be empty');
-            exit(1);
-        }
-    }/**
- * ${CARET}
- *
- * @param array $installationData
- * @return array
- * @since TBD
- *
- */
-    protected function askForSiteData(array $installationData)
-    {
-        $siteData = [];
-        $siteData['testSiteWpUrl'] = $this->ask(
-            'What is the URL the test site?',
-            'http://wp.test'
-        );
-        $siteData['testSiteWpUrl'] = rtrim($siteData['testSiteWpUrl'], '/');
-        $url = parseUrl($siteData['testSiteWpUrl']);
-        $siteData['urlScheme'] = empty($url['scheme']) ? 'http' : $url['scheme'];
-        $siteData['testSiteWpDomain'] = empty($url['host']) ? 'example.com' : $url['host'];
-        $siteData['urlPort'] = empty($url['port']) ? '' : ':' . $url['port'];
-        $siteData['urlPath'] = empty($url['path']) ? '' : $url['path'];
-        $adminEmailCandidate = "admin@{$siteData['testSiteWpDomain']}";
-        $siteData['testSiteAdminEmail'] = $this->ask(
-            'What is the email of the test site WordPress administrator?',
-            $adminEmailCandidate
-        );
-
-        $siteData['title'] = $this->ask('What is the title of the test site?', 'Test');
-
-        $siteData['testSiteAdminUsername'] = $this->ask(
-            'What is the login of the administrator user of the test site?',
-            'admin'
-        );
-        $siteData['testSiteAdminPassword'] = $this->ask(
-            'What is the password of the administrator user of the test site?',
-            'password'
-        );
-
-        return $siteData;
-    }
-
-    protected function fetchSiteData(\PDO $db, array &$dbCreds)
-    {
-        $siteData = [];
-
-        $useSiteDbStmt = $this->tryQuery("USE {$dbCreds['DB_NAME']}", [], $dbCreds);
-
-        if ($useSiteDbStmt === false) {
-            $this->sayWarning('Cannot fetch the value of the "siteurl" option from the database.');
-            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
-            exit(1);
-        }
-
-        $options = $dbCreds['table_prefix'] . 'options';
-        $testSiteWPUrlStmt = $this->tryQuery(
-            "SELECT option_value FROM {$options} WHERE option_name = ?",
-            ['siteurl'],
-            $dbCreds
-        );
-
-        $testSiteWPUrl = $testSiteWPUrlStmt->fetchColumn();
-
-        if (empty($testSiteWPUrl)) {
-            $this->sayWarning('Cannot fetch the value of the "siteurl" option from the database.');
-            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
-            exit(1);
-        }
-
-        $siteData['testSiteWpUrl'] = $testSiteWPUrl;
-        $siteData['testSiteWpUrl'] = rtrim($siteData['testSiteWpUrl'], '/');
-        $url = parseUrl($siteData['testSiteWpUrl']);
-        $siteData['urlScheme'] = empty($url['scheme']) ? 'http' : $url['scheme'];
-        $siteData['testSiteWpDomain'] = empty($url['host']) ? 'example.com' : $url['host'];
-        $siteData['urlPort'] = empty($url['port']) ? '' : ':' . $url['port'];
-        $siteData['urlPath'] = empty($url['path']) ? '' : $url['path'];
-        $adminEmailCandidate = "admin@{$siteData['testSiteWpDomain']}";
-        $siteData['testSiteAdminEmail'] = filter_var($adminEmailCandidate, FILTER_VALIDATE_EMAIL) ?
-            $adminEmailCandidate
-            : $this->ask('What is the email of the test site WordPress administrator?');
-
-        $siteData['title'] = $this->projectName . ' test';
-
-        $usermeta = $dbCreds['table_prefix'] . 'usermeta';
-        $testSiteAdminIdStmt = $this->tryQuery(
-            "SELECT user_id FROM {$usermeta} WHERE meta_key = ? and meta_value like ?;",
-            ['wp_capabilities', '%s:13:"administrator";%'],
-            $dbCreds
-        );
-
-        if (empty($testSiteAdminIdStmt)) {
-            $this->sayWarning('Cannot read the admin user details from the database.');
-            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
-            exit(1);
-        }
-
-        $testSiteAdminUserId = $testSiteAdminIdStmt->fetchColumn();
-
-        $users = $dbCreds['table_prefix'] . 'users';
-        $testSiteAdminUsernameStmt = $this->tryQuery(
-            "SELECT user_login FROM {$users} WHERE ID = ?;",
-            [(int)$testSiteAdminUserId],
-            $dbCreds
-        );
-
-        if (empty($testSiteAdminUsernameStmt)) {
-            $this->sayWarning('Cannot read the admin user details from the database.');
-            $this->sayWarning('Make sure WordPress is installed and working correctly and run this script again.');
-            exit(1);
-        }
-
-        $testSiteAdminUsername = $testSiteAdminUsernameStmt->fetchColumn();
-
-        if (empty($testSiteWPUrl)) {
-            $this->sayWarning('Cannot fetch the administrator user information from the database.');
-
-            $testSiteAdminUsername = $this->ask(
-                'What is the login of the administrator user of the test site?',
-                'admin'
+        $replaceDbNameLine = function ($wpConfigFile) use ($wpConfigContents, $replacementSnippet) {
+            $replaced = preg_replace(
+                '/^define\\s*\\(\\s*(\'|")DB_NAME(\'|")\\s*,.*$/um',
+                $replacementSnippet,
+                $wpConfigContents
             );
 
-            $testSiteAdminPassword = $this->ask(
-                'What is the password of the administrator user of the test site?',
-                'password'
-            );
-        } else {
-            $testSiteAdminPassword = $this->ask(
-                sprintf(
-                    'What is the password of the "%s" user of the test site?',
-                    $testSiteAdminUsername
-                ),
-                'password'
-            );
-        }
+            return $replaced !== $wpConfigContents && file_put_contents($wpConfigFile, $replaced, LOCK_EX);
+        };
 
-        $siteData['testSiteAdminUsername'] = $testSiteAdminUsername;
-        $siteData['testSiteAdminPassword'] = $testSiteAdminPassword;
+        $saySucces =function () {
+            $this->saySuccess('DB_NAME constant line replaced in wp-config.php file.');
+        };
 
-        return $siteData;
+        $suggestEdit = function () use ($wpConfigContents, $replacementSnippet, $wpConfigFile) {
+            $this->sayWarning('Unable to automatically replace the DB_NAME line in the wp-config.php file.');
+            // @todo write this!
+            $this->sayInfo('Read more: <bold>'
+                . docs('/getting-started/auto-configuration#wp-config-update') . '</bold>');
+            $this->sayInfo('Here is the snippet of code you should insert in your wp-config.php file in place of the ' .
+                'line that defines the "DB_NAME" constant.');
+
+            $this->sayWarning("Start copying below this line ---\n");
+            $this->say($replacementSnippet);
+            $this->sayWarning("\nStop copying above this line ---");
+
+            $this->ask('Press enter when you are ready to edit the wp-config.php file...', true);
+
+            Maybe::create(launch_editor_for_input($wpConfigContents, 'wp-config.php'))
+                ->bind(static function ($wpConfigContent) use ($wpConfigFile) {
+                    return file_put_contents($wpConfigFile, $wpConfigContent, LOCK_EX);
+                })
+                ->then(function () {
+                    $this->saySuccess('wp-config.php file updated.');
+                }, function () {
+                    $this->sayError('Unable to update the wp-config.php file: please do it manually before ' .
+                        'running the tests.');
+                });
+        };
+
+        Maybe::create($wpConfigFile)
+            ->bind($replaceDbNameLine)
+            ->then($saySucces, $suggestEdit);
     }
 
-    protected function fetchDbData(\PDO $db, array &$dbCreds)
+    /**
+     * Finds the WordPress root directory path either by "looking around" or by asking the user.
+     *
+     * Relative paths are resolved to absolute paths.
+     *
+     * @return string The WordPress installation root directory path.
+     */
+    protected function findWpRootDir()
     {
-        $data = [];
-        $tablePrefix = $dbCreds['table_prefix'];
+        $wpRootDir = findWordPressRootDir(codecept_root_dir(), false);
+        if (false === $wpRootDir) {
+            $this->say();
+            do {
+                $wpRootDir = realpath(pathNormalize($this->ask(
+                    'What is the WordPress root directory path (it should contain the wp-load.php file)?',
+                    '/var/www/wp'
+                )));
+                if (!$wpRootDir) {
+                    $this->sayError('This path does not exist or is not a directory.');
+                }
+            } while (!$wpRootDir);
+        }
 
-        list($testSiteDbName, $testDbName) = $this->tryCreateDb($db, $dbCreds);
-
-        $data['testSiteDbName'] = $testSiteDbName;
-        $data['testSiteDbHost'] = $dbCreds['DB_HOST'];
-        $data['testSiteDbUser'] = $dbCreds['DB_USER'];
-        $data['testSiteDbPassword'] = $dbCreds['DB_PASSWORD'];
-        $data['testSiteTablePrefix'] = $tablePrefix;
-        $data['testDbName'] = $testDbName;
-        $data['testDbHost'] = $dbCreds['DB_HOST'];
-        $data['testDbUser'] = $dbCreds['DB_USER'];
-        $data['testDbPassword'] = $dbCreds['DB_PASSWORD'];
-        $data['testTablePrefix'] = $tablePrefix;
-
-        return $data;
+        return $wpRootDir;
     }
 }

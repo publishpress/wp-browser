@@ -7,6 +7,11 @@
 
 namespace tad\WPBrowser;
 
+use Monad\FTry;
+use Rah\Danpu\Dump;
+use Rah\Danpu\Export;
+use Rah\Danpu\Import;
+
 /**
  * Builds an array format command line, compatible with the Symfony Process component, from a string command line.
  *
@@ -238,7 +243,7 @@ function findChildDirThat($dir, callable $check)
  *
  * @return string The normalized path.
  */
-function normalizePath($path)
+function pathNormalize($path)
 {
     return implode('/', preg_split('#([/\\\])#u', $path) ?: []);
 }
@@ -260,9 +265,9 @@ function pathJoin(...$frags)
                 static $count;
 
                 if ($count++ > 0) {
-                    $frags[] = normalizePath(trim($frag, '\\/'));
+                    $frags[] = pathNormalize(trim($frag, '\\/'));
                 } else {
-                    $frags[] = normalizePath(rtrim($frag, '\\/'));
+                    $frags[] = pathNormalize(rtrim($frag, '\\/'));
                 }
 
                 return $frags;
@@ -305,16 +310,6 @@ function docs($path = '/')
 }
 
 /**
- * Return the current version of the package.
- *
- * @return string The current version of the package.
- */
-function version()
-{
-    return '2.2.31';
-}
-
-/**
  * A utility function to just move on.
  */
 function goOn()
@@ -332,4 +327,229 @@ function goOn()
 function repeater($input)
 {
     return $input;
+}
+
+/**
+ * Returns the dir/file end of path.
+ *
+ * @param string $path The path to truncate.
+ * @return string The last two components of a path.
+ */
+function pathTail($path, $length = 2)
+{
+    return implode('/', array_reverse(array_filter(
+        array_map(static function () use (&$path) {
+            $basename = basename($path);
+            $path = dirname($path);
+            return $basename;
+        }, range(1, $length?:2))
+    ))) ?: $path;
+}
+
+/**
+ * Tries to dump a database to file.
+ *
+ * @param array $creds The database connection DSN, user and password.
+ * @param string $file The path to the file.
+ *
+ * @return bool Whether the dump was successful or not.
+ */
+function dumpToFile(array $creds, $file)
+{
+    list($dsn, $user, $pass) = array_values($creds);
+
+    $dump = new Dump();
+    try {
+        $dump->file($file)
+            ->dsn($dsn)
+            ->user($user)
+            ->pass($pass)
+            ->tmp(sys_get_temp_dir());
+
+        new Export($dump);
+    } catch (\Exception $e) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Replaces a file backing it up.
+ *
+ * @param               string $file The path to the file to replace.
+ * @param               string $data The data to write to file.
+ * @param callable|null $left The function that will be called on failures, it will be passed a failure message.
+ * @param callable|null $right The function that will be called on failures, it will be passed a flag indicating whether
+ *                             the file was backed up or not.
+ *
+ * @return bool Whether the replacement was successful or not.
+ */
+function putFileReplacement($file, $data, callable $left = null, callable $right = null)
+{
+    $left = $left ?: 'tad\WPBrowser\goOn';
+    $right = $right ?: 'tad\WPBrowser\goOn';
+
+    $backedUp = false;
+    if (file_exists($file)) {
+        $backedUp = rename($file, $file. '.bak');
+
+        if ($backedUp === false) {
+            $left('unable to backup the file.', $backedUp);
+            return false;
+        }
+    }
+
+    if (file_exists($data)) {
+        $put = rename($file, $data);
+    } else {
+        $put = file_put_contents($file, $data, LOCK_EX);
+    }
+
+    if ($put === false) {
+        $left('unable to write or rename the file.', $backedUp);
+        if ($backedUp) {
+            renameFile($file. '.bak', $file, $left, $right);
+        }
+        return false;
+    }
+
+    $right($backedUp);
+
+    return true;
+}
+
+/**
+ * Imports a dump file to a database.
+ *
+
+ * @param array $creds The database connection DSN, user and password.
+ * @param string $file The path to the file to import.
+ *
+ * @return bool Whether the import was successful or not.
+ */
+function importDump(array $creds, $file)
+{
+    list($dsn, $user, $pass) = array_values($creds);
+
+    $dump = new Dump();
+    try {
+        $dump->file($file)
+            ->dsn($dsn)
+            ->user($user)
+            ->pass($pass)
+            ->tmp(sys_get_temp_dir());
+
+        new Import($dump);
+    } catch (\Exception $e) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Renames a file.
+ *
+ * @param               string  $old The old file name.
+ * @param               string  $new The new file name.
+ * @param callable|null $left The function that will be called on failures, it will be passed a failure message.
+ * @param callable|null $right The function that will be called on failures, it will be passed a flag indicating whether
+ *                             the file was backed up or not.
+ *
+ * @return bool Whether the renaming was successful or not.
+ */
+function renameFile($old, $new, callable $left = null, callable $right = null)
+{
+    if (!file_exists($old)) {
+        $left('old file does not exist.');
+    }
+
+    $left = $left ?: 'tad\WPBrowser\goOn';
+    $right = $right ?: 'tad\WPBrowser\goOn';
+
+    $renamed = rename($old, $new);
+
+    if ($renamed === false) {
+        $left('unable to move the file.');
+        return false;
+    }
+
+    $right();
+
+    return true;
+}
+
+/**
+ * Converts a string to its camelCase version.
+ *
+ * @param string $string          The string to convert.
+ * @param bool   $capitalizeFirst Whether to capitalize the first letter or not.
+ *
+ * @return string The camelCase version of the string.
+ */
+function camelCase($string, $capitalizeFirst = false)
+{
+
+    $str = str_replace('-', '', ucwords(slug($string, '-'), '-'));
+
+    if (!$capitalizeFirst) {
+        $str = lcfirst($str);
+    }
+
+    return $str;
+}
+
+/**
+ * Try doing something a number of times.
+ *
+ * Uncatched exceptions are "silenced" in this method, if the need is to handle the exceptions in some way, then
+ * the callable should handle the exceptions in some way.
+ *
+ * @param callable $f     The callable to call times.
+ * @param int      $times The number of retries.
+ *
+ * @return mixed The function result.
+ */
+function tryTimes(callable $f, $times = 3 )
+{
+    $tries = 0;
+    do {
+        $isSuccess = FTry::create($f)->isSuccess();
+        $tries++;
+    } while (!$isSuccess || $tries < $times);
+
+    return $isSuccess;
+}
+
+/**
+ * Removes trailing slash from a path.
+ *
+ * @param string $path The path to remove the trailing slash from.
+ *
+ * @return string The clean path.
+ */
+function  pathUntrailslashit($path){
+    return rtrim( $path, '/\\' );
+}
+
+/**
+ * Returns the resolved and normalized path for a file.
+ *
+ * @param string $path The path to resolve.
+ * @param string|null $root The root dir to resolve the path from.
+ *
+ * @return string The resolved path, or `false` on failure.
+ */
+function pathResolve($path, $root= null)
+{
+    if (empty($path)) {
+        return false;
+    }
+
+    if (file_exists($path) && realpath($path) === $path) {
+        return pathUntrailslashit(pathNormalize($path));
+    }
+
+    return $root ? pathUntrailslashit(pathNormalize(realpath(pathJoin($root, $path)))) : false;
 }

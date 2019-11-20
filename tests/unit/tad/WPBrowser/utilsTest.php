@@ -1,7 +1,5 @@
 <?php namespace tad\WPBrowser;
 
-use Throwable;
-
 class utilsTest extends \Codeception\Test\Unit
 {
     /**
@@ -173,7 +171,7 @@ class utilsTest extends \Codeception\Test\Unit
 
         yield 'removed_child' => [
             codecept_data_dir('folder-structures'),
-            codecept_data_dir('folder-structures/wp-struct-1/wp')
+            codecept_data_dir('folder-structures/wp-struct-3')
         ];
 
         yield 'not_available' => [
@@ -225,6 +223,26 @@ class utilsTest extends \Codeception\Test\Unit
      */
     function test_normalizePath($input, $expected)
     {
-        $this->assertEquals($expected, normalizePath($input));
+        $this->assertEquals($expected, pathNormalize($input));
+    }
+
+    public function pathTailDataSet()
+    {
+        return [
+            'empty' => ['', ''],
+            'root' => ['/', '/'],
+            'len_2_req_0' => ['/foo/bar', 'foo/bar', 0],
+            'len_2_req_1' => ['/foo/bar', 'bar', 1],
+            'len_2_req_2' => ['/foo/bar', 'foo/bar', 2],
+            'len_2_req_3' => ['/foo/bar', 'foo/bar', 3],
+        ];
+    }
+
+    /**
+     * @dataProvider pathTailDataSet
+     */
+    public function test_pathTail($input, $expected, $length = null)
+    {
+        $this->assertEquals($expected, pathTail($input, $length));
     }
 }

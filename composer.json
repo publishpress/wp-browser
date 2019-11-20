@@ -31,7 +31,9 @@
     "mikemclin/laravel-wp-password": "~2.0.0",
     "vlucas/phpdotenv": "^3.0",
     "wp-cli/wp-cli-bundle": ">=2.0 <3.0.0",
-    "zordius/lightncandy": "^1.2"
+    "zordius/lightncandy": "^1.2",
+    "rah/danpu": "^2.7",
+    "chippyash/monad": "^2.1"
   },
   "suggest": {
     "ext-pcntl": "*"

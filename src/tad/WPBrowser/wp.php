@@ -42,20 +42,94 @@ function findWordPressRootDir($startDir = null, $default = null)
 }
 
 /**
+ * Finds the plugin main file in a directory or in a file parent directory.
+ *
+ * @param string $dirOrFile The directory, or the child file, that should be searched for the plugin main file.
+ * @return string|false Either the absolute path to the plugin main file, or `false` if not found.
+ */
+function findPluginFile($dirOrFile)
+{
+    if (is_file($dirOrFile)) {
+        $dirOrFile = dirname($dirOrFile);
+    }
+
+    $flags = \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::CURRENT_AS_PATHNAME;
+    $candidates = new \CallbackFilterIterator(
+        new \FilesystemIterator($dirOrFile, $flags),
+        static function ($file) {
+            return !is_dir($file);
+        }
+    );
+
+    foreach ($candidates as $candidate) {
+        $f = fopen($candidate, 'rb');
+
+        if ($f === false) {
+            continue;
+        }
+
+        $start = fread($f, 8192);
+        fclose($f);
+
+        if ($start === false) {
+            continue;
+        }
+
+        $start = str_replace("\r", "\n", $start);
+
+        if (! preg_match('/^[ \t\/*#@]*Plugin Name:(.*)$/mi', $start)) {
+            continue;
+        }
+
+        return realpath($candidate);
+    }
+
+    return false;
+}
+
+/**
+ * Returns the path to the `wp-config.php` file for a WordPress installation root directory.
+ *
+ * @param string $wpRootDir The path to the WordPress root directory.
+ *
+ * @return string|false the path to the `wp-config.php` file for a WordPress installation root directory else `false`.
+ */
+function findWpConfigFile($wpRootDir)
+{
+    if (empty($wpRootDir)) {
+        return false;
+    }
+
+    $wpConfigFile = pathJoin($wpRootDir, 'wp-config.php');
+
+    if (file_exists($wpConfigFile)) {
+        return $wpConfigFile;
+    }
+
+    $wpConfigFile = dirname($wpRootDir) . '/wp-config.php';
+    $wpSettingsFile = dirname($wpRootDir) . '/wp-settings.php';
+
+    if (!file_exists($wpSettingsFile) && file_exists($wpConfigFile)) {
+        return $wpConfigFile;
+    }
+
+    return false;
+}
+
+/**
  * Returns an array of the variables and constants defined in the `wp-config.php` file.
  *
  * @param string $wpRootDir The path to the WordPress root directory.
  *
  * @return array An array of the variables and constants defined in the WordPress `wp-config.php` file; the array
  *                     has shape `['vars' => <...vars>, 'constants' => <...constants>]`, an empty array on failure.
- *
- * @throws \ReflectionException If the the `\WP_CLI\Runner` class is not found.
  */
 function getWpConfigArgs($wpRootDir)
 {
-    $wpConfigFile = pathJoin($wpRootDir, 'wp-config.php');
+    $wpConfigFile = findWpConfigFile($wpRootDir);
 
-    if (! is_readable($wpConfigFile)) {
+    if (!($wpConfigFile && is_readable($wpConfigFile))) {
+        $cache[$wpRootDir]= [];
         return [];
     }
 
@@ -101,7 +175,9 @@ function getWpConfigArgs($wpRootDir)
 
     $decoded = json_decode($output, true);
 
-    return false === $decoded ? [] : $decoded;
+    $vars =  false === $decoded ? [] : $decoded;
+
+    return $vars;
 }
 
 /**
@@ -141,7 +217,7 @@ function findWpDbCreds($wpRootDir)
  *
  * @param array $dbCreds The WP db connection credentials.
  *
- * @return array The db credentials in the shape [$dsn, $user, $passwd].
+ * @return array The db credentials in the shape [$dsn, $user, $password].
  */
 function buildDbCredsFromWpCreds(array $dbCreds)
 {
@@ -160,4 +236,126 @@ function buildDbCredsFromWpCreds(array $dbCreds)
     }
 
     return [$dsn, $dbUser, $dbPass];
+}
+
+/**
+ * Finds all the plugin files in the WordPress plugins directory.
+ *
+ * @param string $wpRootDir The path to the WordPress installation root directory.
+ * @return array An array of the absolute paths to each found plugin file.
+ */
+function findPluginFiles($wpRootDir)
+{
+    $pluginFiles = [];
+
+    $wpConfigArgs = getWpConfigArgs($wpRootDir);
+    $contentDir = isset($wpConfigArgs['constants']['WP_CONTENT_DIR']) ?
+        $wpConfigArgs['constants']['WP_CONTENT_DIR']
+        : pathJoin($wpRootDir, 'wp-content');
+    $pluginsDir = isset($wpConfigArgs['constants']['WP_PLUGIN_DIR']) ?
+        $wpConfigArgs['constants']['WP_PLUGIN_DIR']
+        : pathJoin($contentDir, 'plugins');
+
+    $pluginDirs = new \FilesystemIterator(
+        $pluginsDir,
+        \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::CURRENT_AS_PATHNAME
+    );
+
+    foreach ($pluginDirs as $pluginDir) {
+        $pluginFiles[] = findPluginFile($pluginDir);
+    }
+
+    return array_filter($pluginFiles);
+}
+
+/**
+ * Returns an array of all the theme directories found in the directory.
+ *
+ * @param string $wpRootDir The path to the WordPress root directory.
+ * @return array A list of theme directories found in the WordPress root directory.
+ */
+function findThemesInDir($wpRootDir)
+{
+    $themes = [];
+
+    $themesDir =  pathJoin(getWpContentDir($wpRootDir), 'themes');
+
+    $themeDirs = new \FilesystemIterator(
+        $themesDir,
+        \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::CURRENT_AS_PATHNAME
+    );
+
+    foreach ($themeDirs as $themeDir) {
+        if (!file_exists($themeDir . '/style.css')) {
+            continue;
+        }
+        $themes[] = $themeDir;
+    }
+
+    return array_filter($themes);
+}
+
+/**
+ * Returns the path to the WordPress content directory given a WordPress root folder.
+ *
+ * @param string $wpRootDir The path to the WordPress root directory.
+ *
+ * @return string The path to the WordPress content directory.
+ */
+function getWpContentDir($wpRootDir)
+{
+    $wpConfigArgs = getWpConfigArgs($wpRootDir);
+    return isset($wpConfigArgs['constants']['WP_CONTENT_DIR']) ?
+        $wpConfigArgs['constants']['WP_CONTENT_DIR']
+        : pathJoin($wpRootDir, 'wp-content');
+}
+
+/**
+ * Returns the full code of the wp-db.php drop-in that will use `WP_DB_` environment variables to crate the `$wpdb`
+ * object.
+ *
+ * @return string The drop-in code.
+ */
+function dbDropInForEnv()
+{
+    return implode(
+        PHP_EOL,
+        [
+            '<?php',
+            'global $wpdb;',
+            '$dbUser = getenv( "WP_DB_USER" ) ?: false;',
+            '$dbPassword = getenv( "WP_DB_PASSWORD" ) ?: false;',
+            '$dbName = getenv( "WP_DB_NAME" ) ?: false;',
+            '$dbHost = getenv( "WP_DB_HOST" ) ?: false;',
+            'if( false !== $dbUser && false !== $dbPassword && false !== $dbName && false !== $dbHost ) {',
+            '   $wpdb = new wpdb( $dbUser, $dbPassword, $dbName, $dbHost );',
+            '}'
+        ]
+    );
+}
+
+/**
+ * Returns the value of a constant defined in the wp-config.php file, if defined.
+ *
+ * @param string $wpRootDir The path to the WordPress root directory.
+ * @param string $const     The name of the constant to return.
+ * @return mixed|null The constant value, if set, or `null`.
+ */
+function getWpConfigConstant($wpRootDir, $const)
+{
+    return isset(getWpConfigArgs($wpRootDir)['constants'][$const]) ?
+        getWpConfigArgs($wpRootDir)['constants'][$const]
+        : null;
+}
+
+/**
+ * Returns the absolute path to a theme style.css file, given the theme root directory.
+ *
+ * @param string $rootDir The theme root directory path.
+ * @return string|false Either the absolute path to the theme style.css file, or `false` if not found.
+ */
+function findThemeStyleFile($rootDir)
+{
+    $styleFile = realpath(pathJoin($rootDir, 'style.css'));
+    return $styleFile && file_exists($styleFile) ? $styleFile : false;
 }

@@ -23,11 +23,6 @@ class wpTest extends Unit
             codecept_data_dir('folder-structures/wp-struct-1/wp')
         ];
 
-        yield 'same' => [
-            codecept_data_dir('folder-structures/wp-struct-1/wp'),
-            codecept_data_dir('folder-structures/wp-struct-1/wp')
-        ];
-
         yield 'immediate_child' => [
             codecept_data_dir('folder-structures/wp-struct-1'),
             codecept_data_dir('folder-structures/wp-struct-1/wp')
@@ -35,7 +30,7 @@ class wpTest extends Unit
 
         yield 'removed_child' => [
             codecept_data_dir('folder-structures'),
-            codecept_data_dir('folder-structures/wp-struct-1/wp')
+            codecept_data_dir('folder-structures/wp-struct-3')
         ];
 
         yield 'not_available' => [
@@ -64,10 +59,10 @@ class wpTest extends Unit
     public function findDbCoordinatesDataSet()
     {
         return [
-            'no_wp_config' => [__DIR__, false],
+            'no_wp_config' => [__DIR__, []],
             'missing_db_host' => [
                 codecept_data_dir('folder-structures/wp-struct-2'),
-                false
+                []
             ],
             'w_test_db_host_and_test_settings' => [
             codecept_data_dir('folder-structures/wp-struct-3'),
