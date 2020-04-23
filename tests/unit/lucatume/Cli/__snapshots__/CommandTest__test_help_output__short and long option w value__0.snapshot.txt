@@ -1,0 +1,12 @@
+
+test
+
+Signature: [32mtest [-d|--dry-run=] [--help][0m
+
+Arguments:
+  
+  
+Options:
+  [32m--help[0m      Display this help text
+  [32m-d|--dry-run[0m(req. value) _help_
+  

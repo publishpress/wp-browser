@@ -112,12 +112,12 @@ class EventDispatcherAdapter
             return static::$sharedInstance;
         }
 
-        global $app;
+        global $command;
 
         $appEventDispatcher = null;
-        if ($app instanceof Application) {
+        if ($command instanceof Application) {
             static::$allowCodeceptionHooks = true;
-            $appEventDispatcher            = static::getAppEventDispatcher($app);
+            $appEventDispatcher            = static::getAppEventDispatcher($command);
         } else {
             static::$allowCodeceptionHooks = false;
             $appEventDispatcher            = new SymfonyEventDispatcher();

@@ -64,11 +64,11 @@ trait WithEvents
             return static::$dispatcher;
         }
 
-        global $app;
+        global $command;
 
-        if ($app instanceof Application) {
+        if ($command instanceof Application) {
             try {
-                $runningCommand = ReflectionHelper::readPrivateProperty($app, 'runningCommand', SymfonyApp::class);
+                $runningCommand = ReflectionHelper::readPrivateProperty($command, 'runningCommand', SymfonyApp::class);
 
                 if (!$runningCommand instanceof Command) {
                     throw new ModuleException(

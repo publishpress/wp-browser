@@ -97,9 +97,9 @@ class EventDispatcherAdapterTest extends \Codeception\Test\Unit
      */
     public function should_throw_if_expected_prop_not_set()
     {
-        global $app;
-        $this->appBackup            = $app;
-        $app                        = $this->makeEmpty(Application::class);
+        global $command;
+        $this->appBackup            = $command;
+        $command                        = $this->makeEmpty(Application::class);
         $runningCommand             = $this->makeEmpty(Run::class);
         $mockSymfonyEventDispatcher = $this->makeEmpty(SymfonyEventDispatcher::class);
         $codecept                   = $this->makeEmpty(Codecept::class, [
@@ -119,15 +119,15 @@ class EventDispatcherAdapterTest extends \Codeception\Test\Unit
      */
     public function should_throw_if_event_dispatcher_is_not_correct_type()
     {
-        global $app;
-        $this->appBackup = $app;
-        $app             = $this->makeEmpty(Application::class);
+        global $command;
+        $this->appBackup = $command;
+        $command             = $this->makeEmpty(Application::class);
         $runningCommand  = $this->makeEmpty(Run::class);
         $codecept        = $this->makeEmpty(Codecept::class, [
             'getDispatcher' => new \stdClass()
         ]);
         setPrivateProperties($runningCommand, [ 'codecept' => $codecept ]);
-        setPrivateProperties($app, [ 'runningCommand' => $runningCommand ]);
+        setPrivateProperties($command, [ 'runningCommand' => $runningCommand ]);
 
         $this->expectException(TestRuntimeException::class);
 
@@ -141,13 +141,13 @@ class EventDispatcherAdapterTest extends \Codeception\Test\Unit
      */
     public function should_throw_if_running_command_codecept_is_not_correct_type()
     {
-        global $app;
-        $this->appBackup = $app;
-        $app             = $this->makeEmpty(Application::class);
+        global $command;
+        $this->appBackup = $command;
+        $command             = $this->makeEmpty(Application::class);
         $runningCommand  = $this->makeEmpty(Run::class);
         $codecept        = new \stdClass();
         setPrivateProperties($runningCommand, [ 'codecept' => $codecept ]);
-        setPrivateProperties($app, [ 'runningCommand' => $runningCommand ]);
+        setPrivateProperties($command, [ 'runningCommand' => $runningCommand ]);
 
         $this->expectException(TestRuntimeException::class);
 
@@ -161,11 +161,11 @@ class EventDispatcherAdapterTest extends \Codeception\Test\Unit
      */
     public function should_throw_if_running_app_command_is_not_correct_type()
     {
-        global $app;
-        $this->appBackup = $app;
-        $app             = $this->makeEmpty(Application::class);
+        global $command;
+        $this->appBackup = $command;
+        $command             = $this->makeEmpty(Application::class);
         $runningCommand  = new \stdClass();
-        setPrivateProperties($app, [ 'runningCommand' => $runningCommand ]);
+        setPrivateProperties($command, [ 'runningCommand' => $runningCommand ]);
 
         $this->expectException(TestRuntimeException::class);
 
@@ -179,9 +179,9 @@ class EventDispatcherAdapterTest extends \Codeception\Test\Unit
      */
     public function should_return_shared_instance_if_global_app_is_not_correct_type()
     {
-        global $app;
-        $this->appBackup = $app;
-        $app             = new \stdClass();
+        global $command;
+        $this->appBackup = $command;
+        $command             = new \stdClass();
 
         $eventDispatcher = EventDispatcherAdapter::getEventDispatcher();
 

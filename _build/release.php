@@ -2,68 +2,45 @@
 <?php
 /**
  * Release a major, minor or patch update w/ release notes from the CHANGELOG.md file.
- *
- * Usage:
- *
- *  _build/release.php patch
- *  _build/release.php minor
- *  _build/release.php major
- *
- * Release w/o prompt confirmation:
- *
- *  _build/release.php -q patch
- *  _build/release.php --no-interactive minor
- *
- * Release w/o checking for dirty or unpushed changes:
- *
- *  _build/release.php --no-dirty-check minor
- *  _build/release.php --no-unpushed-check patch
- *
- * Run a dry-run test:
- *
- *  _build/release.php --dry-run patch
- *
- * Update the changelog:
- *
- *  _build/release.php --changelog-update patch
  */
 
-namespace tad\WPBrowser;
+namespace tad\WPBrowser\Cli;
 
+use lucatume\Cli\App;
+use lucatume\Cli\Command;
 use tad\WPBrowser\Utils\Map;
 
 $root = dirname(__DIR__);
 
 require_once $root . '/vendor/autoload.php';
 
-$changelogFile = $root . '/CHANGELOG.md';
+$command = new Command(
+    $argv[0],
+    [
+        'type' => 'The release type, one of major, minor or patch.',
+        '[-d|--dry-run]' => 'Run the script in dry-run mode, without actually modifying anything.',
+        '[--no-changelog-update]' => 'Skip the changelog file update.',
+        '[--no-check-diff]' => 'Skip the check for uncommitted work in the current branch.',
+        '[--no-check-unpushed]' => 'Skip the check for unpushed work between local and remote branch.',
+        '[-q|--no-interactive]' => 'Run the script without requiring any interaction.'
+    ]
+);
 
-function args()
-{
-    $options = getopt('q', ['not-interactive', 'no-diff-check', 'no-unpushed-check', 'dry-run', 'no-changelog-update'],
-        $optind);
-    $map = [
-        'releaseType' => isset($argv[$optind]) ? $argv[$optind] : 'patch',
-        'notInteractive' => isset($options['q']) || isset($options['not-interactive']),
-        'noChangelogUpdate' => isset($options['no-changelog-update']),
-        'checkDiff' => empty($options['no-diff-check']),
-        'checkUnpushed' => empty($options['no-unpushed-check']),
-        'dryRun' => isset($options['dry-run']),
-    ];
+$args = $command->parseInput();
 
-    return static function ($key, $default = null) use ($map) {
-        return isset($map[$key]) ? $map[$key] : $default;
-    };
+if ($args('help', false)) {
+    echo $args('_help');
+    exit(0);
 }
 
-$args = args();
+$changelogFile = $root . '/CHANGELOG.md';
 
-if (!in_array($args('releaseType'), ['major', 'minor', 'patch'], true)) {
+if (!in_array($args('type', 'patch'), ['major', 'minor', 'patch'], true)) {
     echo "\e[31mThe release type has to be one of major, minor or patch.\e[0m\n";
     exit(1);
 }
 
-$dryRun = $args('dryRun', false);
+$dryRun = $args('dry-run', false);
 
 $currentGitBranch = trim(shell_exec('git rev-parse --abbrev-ref HEAD'));
 if ($currentGitBranch !== 'master') {
@@ -126,11 +103,10 @@ function updateChangelog($changelog, $version, callable $args, $date = null)
     echo "\n\n[...]\n\n";
     echo substr($changelogContents, strlen($changelogContents) - 512);
     echo "---\n\n";
-    if (!$args('dryRun', false)
+    if (!$args('dry-run', false)
         && (
-            $args('notInteractive', false)
-            || confirm("Would you like to proceed?")
-        )
+            $args('no-interactive', false)
+            || confirm("Would you like to proceed?"))
     ) {
         file_put_contents($changelog, $changelogContents);
         passthru('git commit -m "doc(CHANGELOG.md) update to version ' . $version . '" -- ' . $changelog);
@@ -139,7 +115,7 @@ function updateChangelog($changelog, $version, callable $args, $date = null)
 
 $changelog = changelog($changelogFile);
 
-$releaseType = $args('releaseType', 'patch');
+$releaseType = $args('type', 'patch');
 switch ($releaseType) {
     case 'major':
         $releaseVersion = preg_replace_callback('/(?<target>\\d+)\\.\\d\.\\d+/', static function ($m) {
@@ -168,11 +144,11 @@ echo "Next release: \e[32m" . $releaseVersion . "\e[0m\n";
 echo "Release notes:\n\n---\n" . $fullReleaseNotes . "\n---\n";
 echo "\n\n";
 
-if (!$args('noChangelogUpdate', false)) {
+if (!$args('no-changelog-update', false)) {
     updateChangelog($changelogFile, $releaseVersion, $args);
 }
 
-if ($args('checkDiff', true) && !$dryRun) {
+if ($args('no-check-diff', true) && !$dryRun) {
     $gitDirty = trim(shell_exec('git diff HEAD'));
     if (!empty($gitDirty)) {
         echo "\e[31mYou have uncommited work.\e[0m\n";
@@ -186,7 +162,7 @@ function confirm($question)
     return preg_match('/y/i', readline($question));
 }
 
-if ($args('checkUnpushed', true) && !$dryRun) {
+if (!$args('no-check-unpushed', false) && !$dryRun) {
     $gitDiff = trim(shell_exec('git log origin/master..HEAD'));
     if (!empty($gitDiff)) {
         echo "\e[31mYou have unpushed changes.\e[0m\n";
@@ -204,7 +180,7 @@ $releaseCommand = 'hub release create -F .rel ' . $releaseVersion;
 
 echo "Releasing with command: \e[32m" . $releaseCommand . "\e[0m\n\n";
 
-if ($dryRun || $args('notInteractive', false) || confirm('Do you want to proceed?')) {
+if ($dryRun || $args('no-interactive', false) || confirm('Do you want to proceed?')) {
     if (!$dryRun) {
         passthru($releaseCommand);
     }
