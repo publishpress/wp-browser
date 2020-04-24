@@ -89,53 +89,49 @@ class Command
     {
         $options = [];
         $args = [];
+        $haveMulti = false;
 
         foreach (array_keys($definition) as $entry) {
-            if (preg_match('/^\\[--(?<option>[^=]+)(?<value>=)*](?<multi>\\*)*/', $entry, $m)) {
-                // Matches [--quiet], [--file=] and [--config=]*
-                $options[] = [
-                    'signature' => $m[0],
-                    'long' => $m['option'],
-                    'short' => null,
-                    'flag' => empty($m['value']),
-                    'multi' => isset($m['multi'])
-                ];
-                continue;
+            if (0 === strpos($entry, '[-')) {
+                // Option.
+                if (preg_match('/\\[(?<short>-\\w)*\\|*(?<long>--[\\w_-]+)*(?<req_value>=)*](?<multi>\\*)*/us', $entry, $m)) {
+                    if (empty($m['long']) && empty($m['short'])) {
+                        throw CliException::becauseDefinitionEntryDoesNotMatchAnyPattern($entry);
+                    }
+                    $options[] = [
+                        'signature' => $entry,
+                        'short' => !empty($m['short']) ? substr($m['short'], 1) : null,
+                        'long' => !empty($m['long']) ? substr($m['long'], 2) : null,
+                        'flag' => empty($m['req_value']),
+                        'multi' => !empty($m['multi']),
+                    ];
+
+                    continue;
+                }
+            } else {
+                // Argument.
+                if (preg_match('/^(?<opt_o>\\[)*(?<name>[\\w_-]+)(?<opt_c>])*(?<multi>\\*)*/us', $entry, $m)) {
+                    if (!empty($m['opt_o']) xor !empty($m['opt_c'])) {
+                        throw CliException::becauseDefinitionEntryDoesNotMatchAnyPattern($entry);
+                    }
+
+                    if ($haveMulti) {
+                        throw CliException::becauseMultiArgumentsShouldBeLast();
+                    }
+
+                    $haveMulti = !empty($m['multi']) ? $entry : false;
+
+                    $args[] = [
+                        'name' => $m ['name'],
+                        'signature' => $entry,
+                        'optional' => !empty($m['opt_c']),
+                        'multi' => !empty($m['multi']),
+                    ];
+                    continue;
+                }
             }
 
-            if (preg_match('/^\\[-(?<option>[^=|]*)(?<value>=)*](?<multi>\\*)*/', $entry, $m)) {
-                // Matches [-q], [-f=] and [-c=]*
-                $options[] = [
-                    'signature' => $m[0],
-                    'long' => null,
-                    'short' => $m['option'],
-                    'flag' => empty($m['value']),
-                    'multi' => isset($m['multi'])
-                ];
-                continue;
-            }
-
-            if (preg_match('/^\\[-(?<short>\\w)\\|--(?<long>[^=]+)(?<value>=)*](?<multi>\\*)*/us', $entry, $m)) {
-                // Matches [-q|--quiet], [-f|--file=] and [-c|--config=]*
-                $options[] = [
-                    'signature' => $m[0],
-                    'long' => $m['long'],
-                    'short' => $m['short'],
-                    'flag' => empty($m['value']),
-                    'multi' => isset($m['multi'])
-                ];
-
-                continue;
-            }
-
-            if (preg_match('/^(?<optional>\\[)*(?<name>[^]*]+)]*(?<multi>\\*)*/us', $entry, $m)) {
-                $args[] = [
-                    'signature' => $m[0],
-                    'name' => $m['name'],
-                    'required' => empty($m['optional']),
-                    'multi' => !empty($m['multi'])
-                ];
-            }
+            throw CliException::becauseDefinitionEntryDoesNotMatchAnyPattern($entry);
         }
 
         usort($options, static function (array $a, array $b) {
@@ -144,6 +140,22 @@ class Command
 
         $this->args = $args;
         $this->options = $options;
+    }
+
+    /**
+     * Parses the input and exits with a CLI-friendly message on error.
+     *
+     * @param array<mixed>|null $input The input to parse or `null` to use the global script arguements.
+     * @param int $exitCode The exit code to use on failure.
+     */
+    public function parseInputOrExit(array $input = null, $exitCode = 1)
+    {
+        try {
+            return $this->parseInput($input);
+        } catch (CliException $e) {
+            $this->output($e->getMessage());
+            exit($exitCode);
+        }
     }
 
     /**
@@ -216,7 +228,7 @@ class Command
         }
 
         $requiredArgs = array_column(array_filter($args, static function (array $argDef) {
-            return $argDef['required'] === true;
+            return $argDef['optional'] === false;
         }), 'name');
 
         if (empty($parsedOptions['help'])) {
@@ -308,5 +320,15 @@ HELP;
         );
 
         return $output . PHP_EOL;
+    }
+
+    /**
+     * Uses the current output handler to output a message.
+     *
+     * @param string $message The message to output.
+     */
+    protected function output($message)
+    {
+        call_user_func($this->output, $message);
     }
 }

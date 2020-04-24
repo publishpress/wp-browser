@@ -193,4 +193,40 @@ class CommandTest extends \Codeception\Test\Unit
 
         $this->assertMatchesStringSnapshot($command->help());
     }
+
+    public function badDefinitionFormatProvider()
+    {
+       return [
+            'test]' => [['test]'=>'_help_']],
+            '[test' => [['[test'=>'_help_']],
+           '[test*' => [['[test*'=>'_help_']],
+           'test]*' => [['test]*'=>'_help_']],
+           'test]=' => [['test]='=>'_help_']],
+           '[-f=' => [['[-f='=>'_help_']],
+       ] ;
+}
+    /**
+     * It should throw if definition frag does not match format
+     *
+     * @test
+     * @dataProvider badDefinitionFormatProvider
+     */
+    public function should_throw_if_definition_frag_does_not_match_format($badDefinitionFormat)
+    {
+        $this->expectException(CliException::class);
+
+        new Command('test',$badDefinitionFormat);
+    }
+
+    /**
+     * It should throw if definition includes multiple multi args
+     *
+     * @test
+     */
+    public function should_throw_if_definition_includes_multiple_multi_args()
+    {
+        $this->expectException(CliException::class);
+
+        new Command('test',['name*'=>'_help_','lastname*' => '_help_']);
+    }
 }

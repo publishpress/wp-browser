@@ -39,4 +39,14 @@ class CliException extends \Exception
     {
         throw new static("\n\e[31mEach command definition entry should be in the format <definition> => <help>\e[0m\n\n");
     }
+
+    public static function becauseDefinitionEntryDoesNotMatchAnyPattern($entry)
+    {
+        throw new static("\n\e[31mDefinition entry {$entry} does not match any pattern.\e[0m\n\n");
+    }
+
+    public static function becauseMultiArgumentsShouldBeLast()
+    {
+        throw new static("\n\e[31mOnly one argument can support multiple values and it must be the last.\e[0m\n\n");
+    }
 }

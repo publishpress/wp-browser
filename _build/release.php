@@ -6,7 +6,6 @@
 
 namespace tad\WPBrowser\Cli;
 
-use lucatume\Cli\App;
 use lucatume\Cli\Command;
 use tad\WPBrowser\Utils\Map;
 
@@ -26,7 +25,7 @@ $command = new Command(
     ]
 );
 
-$args = $command->parseInput();
+$args = $command->parseInputOrExit();
 
 if ($args('help', false)) {
     echo $args('_help');
