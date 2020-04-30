@@ -1,0 +1,1 @@
+Normal \e[100mBg_dark_gray\e[0m Normal\e[0m

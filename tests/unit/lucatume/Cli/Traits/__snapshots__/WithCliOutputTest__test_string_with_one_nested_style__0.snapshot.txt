@@ -1,0 +1,1 @@
+Normal \e[32mgreen \e[1mgreen and bold\e[0m\e[32m green\e[0m normal\e[0m

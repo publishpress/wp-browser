@@ -6,6 +6,9 @@
 
 exec('git describe --tags --abbrev=0', $latestTag);
 var_dump($latestTag);
-$latestTag = '2.4.2';
-exec('git log '.$latestTag.'..HEAD --pretty=format:"%s"',$commits);
+exec('git log '.reset($latestTag).'..HEAD --pretty=format:"%s"',$commits);
+$commitFilterPattern = '/^(?<type>(fix|feat|doc|refactor))/';
+$commits = array_filter($commits, static function($commit)use($commitFilterPattern){
+    return preg_match($commitFilterPattern,$commit);
+});
 var_dump($commits);

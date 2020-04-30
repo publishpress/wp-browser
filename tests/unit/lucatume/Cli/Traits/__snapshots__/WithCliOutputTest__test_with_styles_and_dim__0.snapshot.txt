@@ -1,0 +1,1 @@
+Normal \e[32mgreen \e[2m\e[33myellow dim\e[0m\e[32m\e[2m green dim\e[0m\e[32m green\e[0m normal\e[0m

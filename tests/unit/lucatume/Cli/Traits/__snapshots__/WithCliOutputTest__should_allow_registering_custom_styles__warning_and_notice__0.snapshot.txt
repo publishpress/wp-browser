@@ -1,0 +1,1 @@
+normal \e[5;43m warning \e[31;2;43mwarning and notice\e[0m\e[5;43m notice\e[0m normal\e[0m

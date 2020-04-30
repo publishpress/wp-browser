@@ -1,0 +1,1 @@
+Normal \e[106mBg_light_cyan\e[0m Normal\e[0m

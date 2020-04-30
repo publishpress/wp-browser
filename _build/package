@@ -6,6 +6,7 @@
 
 namespace tad\WPBrowser\Cli;
 
+use lucatume\Cli\App;
 use lucatume\Cli\Command;
 use tad\WPBrowser\Utils\Map;
 
@@ -13,8 +14,10 @@ $root = dirname(__DIR__);
 
 require_once $root . '/vendor/autoload.php';
 
-$command = new Command(
-    $argv[0],
+$app = new App('package', '1.0.0');
+$app->addCommand(new Command(
+    'release',
+    'Releases a new version of the package, requires git and github CLI tools.',
     [
         'type' => 'The release type, one of major, minor or patch.',
         '[-d|--dry-run]' => 'Run the script in dry-run mode, without actually modifying anything.',
@@ -23,9 +26,10 @@ $command = new Command(
         '[--no-check-unpushed]' => 'Skip the check for unpushed work between local and remote branch.',
         '[-q|--no-interactive]' => 'Run the script without requiring any interaction.'
     ]
-);
+));
 
-$args = $command->parseInputOrExit();
+$app->help();
+exit(0);
 
 if ($args('help', false)) {
     echo $args('_help');

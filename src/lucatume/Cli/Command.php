@@ -14,7 +14,7 @@ namespace lucatume\Cli;
  */
 class Command
 {
-    use WithCliStyles;
+    use Traits\WithCliOutput;
 
     /**
      * The command name.
@@ -22,13 +22,6 @@ class Command
      * @var string
      */
     protected $name;
-
-    /**
-     * The current handler of the application output.
-     *
-     * @var callable
-     */
-    protected $output;
 
     /**
      * The parsed command arguments.
@@ -51,32 +44,38 @@ class Command
     protected $definition;
 
     /**
+     * The command short description.
+     *
+     * @var string
+     */
+    protected $description;
+
+    /**
      * Command constructor.
      *
      * @param string $name The command name.
-     * @param array<string,string> $definition The map of the command definitions of arguments and options and the description.
-     * @param array<string,string> $help The command help text for command argument or option.
+     * @param string $description The command short description.
+     * @param array<string,string> $definition The map of the command definitions of arguments and options and the
+     *                                         description.
      * @param callable|null $output The current output handler for the command. Echo if not provided.
+     *
+     * @throws CliException If the definition format is not correct.
      */
-    public function __construct($name, array $definition, $output = null)
+    public function __construct($name, $description, array $definition = [], $output = null)
     {
-        if (empty($definition)) {
-            throw CliException::becauseDefinitionIsEmpty();
-        }
         if (count(array_filter(array_keys($definition), 'is_string')) !== count($definition)) {
             throw CliException::becauseEachDefinitionEntryShouldBeAMapElement();
         }
         $this->name = $name;
+        $this->description = $description;
 
         if (!isset($definition['[--help]'])) {
-            $definition['[--help]'] = 'Display this help text';
+            $definition['[--help]'] = 'Display the command help text';
         }
 
         $this->definition = $definition;
 
-        $this->output = $output ?: function ($text) {
-            echo $this->style($text);
-        };
+        $this->outputHandler = $this->getDefaultOutputHandler();
         $this->parseDefinition($definition);
     }
 
@@ -94,7 +93,12 @@ class Command
         foreach (array_keys($definition) as $entry) {
             if (0 === strpos($entry, '[-')) {
                 // Option.
-                if (preg_match('/\\[(?<short>-\\w)*\\|*(?<long>--[\\w_-]+)*(?<req_value>=)*](?<multi>\\*)*/us', $entry, $m)) {
+                $matchesOption = preg_match(
+                    '/\\[(?<short>-\\w)*\\|*(?<long>--[\\w_-]+)*(?<req_value>=)*](?<multi>\\*)*/us',
+                    $entry,
+                    $m
+                );
+                if ($matchesOption) {
                     if (empty($m['long']) && empty($m['short'])) {
                         throw CliException::becauseDefinitionEntryDoesNotMatchAnyPattern($entry);
                     }
@@ -270,65 +274,106 @@ class Command
 
 %s
 
-Signature: \e[32m%s\e[0m
+Signature: <green>%s</green>
 
 Arguments:
+
   %s
   
 Options:
+
   %s
   
 HELP;
 
-        $args = $this->args;
-        $options = $this->options;
         $name = $this->name;
         $definition = $this->name . ' ' . implode(' ', array_keys($this->definition));
 
-        if (!(count($args) || count($options))) {
+        if (!(count($this->args) || count($this->options))) {
             return "{$name}\n\nThis command has no arguments and no options.";
         }
 
-        $lengths = array_map('strlen', array_column(array_merge($args, $options), 'signature'));
-        $pad = max(20, count($lengths) > 1 ? max(...$lengths) + 6 : reset($lengths) + 6);
+        $signatures = array_column(array_merge($this->args, $this->options), 'signature');
+        $pad = max(20, ...array_map('strlen', $signatures))+6;
+
+        $argsList = count($this->args) ?
+            $this->getArgsHelp($pad)
+            : 'This command does not support any argument.';
+        $optionsList = count($this->options) ?
+            $this->getOptionsHelp($pad)
+            : 'This command does not support any option.';
 
         $output = sprintf(
             $template,
             $name,
             $definition,
-            implode("\n  ", array_map(function ($arg) use ($pad) {
-                $comment = $this->definition[$arg['signature']];
-                $signature = trim($arg['signature'], '[]*');
-                $paddedName = str_pad("\e[32m{$signature}\e[0m", $pad);
-                $notes = implode(', ', array_keys(array_filter([
-                    'optional' => empty($arg['required']),
-                    '0-n values' => empty($arg['required']) && !empty($arg['multi']),
-                    '1-n values' => !empty($arg['required']) && !empty($arg['multi'])
-                ])));
-                return sprintf('%s%s%s', $paddedName, ($notes ? "({$notes}) " : ''), $comment);
-            }, $args)),
-            implode("\n  ", array_map(function (array $option) use ($pad) {
-                $comment = $this->definition[$option['signature']];
-                $signature = trim($option['signature'], '[]=*');
-                $paddedName = str_pad("\e[32m{$signature}\e[0m", $pad);
-                $notes = implode(', ', array_keys(array_filter([
-                    'req. value' => empty($option['flag']),
-                    '0-n' => !empty($option['multi'])
-                ])));
-                return sprintf('%s%s%s', $paddedName, ($notes ? "({$notes}) " : ''), $comment);
-            }, $options))
+            $argsList,
+            $optionsList
         );
 
         return $output . PHP_EOL;
     }
 
     /**
-     * Uses the current output handler to output a message.
+     * Returns the help output for the command arguments.
      *
-     * @param string $message The message to output.
+     * @param int $pad The padding value for the help output.
+     *
+     * @return string The help output for the command arguments.
      */
-    protected function output($message)
+    protected function getArgsHelp($pad)
     {
-        call_user_func($this->output, $message);
+        return implode("\n  ", array_map(function ($arg) use ($pad) {
+            $comment = $this->definition[$arg['signature']];
+            $signature = trim($arg['signature'], '[]*');
+            $paddedName = $this->style('<green>' . str_pad($signature, $pad) . '</green>');
+            $notes = implode(', ', array_keys(array_filter([
+                'optional' => empty($arg['required']),
+                '0-n values' => empty($arg['required']) && !empty($arg['multi']),
+                '1-n values' => !empty($arg['required']) && !empty($arg['multi'])
+            ])));
+            return sprintf('%s%s%s', $paddedName, ($notes ? "({$notes}) " : ''), $comment);
+        }, $this->args));
+    }
+
+    /**
+     * Returns the help output for the command options.
+     *
+     * @param int $pad The padding value for the help output.
+     *
+     * @return string The help output for the command options.
+     */
+    protected function getOptionsHelp($pad)
+    {
+        return implode("\n  ", array_map(function (array $option) use ($pad) {
+            $comment = $this->definition[$option['signature']];
+            $signature = trim($option['signature'], '[]=*');
+            $paddedName = $this->style('<green>' . str_pad($signature, $pad) . '</green>');
+            $notes = implode(', ', array_keys(array_filter([
+                'req. value' => empty($option['flag']),
+                '0-n' => !empty($option['multi'])
+            ])));
+            return sprintf('%s%s%s', $paddedName, ($notes ? "({$notes}) " : ''), $comment);
+        }, $this->options));
+    }
+
+    /**
+     * Returns the current command name.
+     *
+     * @return string The current command name.
+     */
+    public function getName()
+    {
+        return $this->name;
+    }
+
+    /**
+     * Returns the command description.
+     *
+     * @return string The command description.
+     */
+    public function getDescription()
+    {
+        return $this->description;
     }
 }

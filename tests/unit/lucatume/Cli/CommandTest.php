@@ -9,16 +9,6 @@ class CommandTest extends \Codeception\Test\Unit
     use SnapshotAssertions;
 
     /**
-     * Test command throws if definition is empty
-     */
-    public function test_command_throws_if_definition_is_empty()
-    {
-        $this->expectException(CliException::class);
-
-        new Command('test', []);
-    }
-
-    /**
      * Test command throws if each element is not a map entry
      */
     public function test_command_throws_if_each_element_is_not_a_map_entry()
@@ -196,15 +186,15 @@ class CommandTest extends \Codeception\Test\Unit
 
     public function badDefinitionFormatProvider()
     {
-       return [
+        return [
             'test]' => [['test]'=>'_help_']],
             '[test' => [['[test'=>'_help_']],
            '[test*' => [['[test*'=>'_help_']],
            'test]*' => [['test]*'=>'_help_']],
            'test]=' => [['test]='=>'_help_']],
            '[-f=' => [['[-f='=>'_help_']],
-       ] ;
-}
+        ] ;
+    }
     /**
      * It should throw if definition frag does not match format
      *
@@ -215,7 +205,7 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        new Command('test',$badDefinitionFormat);
+        new Command('test', $badDefinitionFormat);
     }
 
     /**
@@ -227,6 +217,28 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        new Command('test',['name*'=>'_help_','lastname*' => '_help_']);
+        new Command('test', ['name*'=>'_help_','lastname*' => '_help_']);
+    }
+
+    /**
+     * It should allow getting the command name
+     *
+     * @test
+     */
+    public function should_allow_getting_the_command_name()
+    {
+        $command = new Command('greet', ['name'=>'_help_']);
+
+        $this->assertEquals('greet', $command->getName());
+    }
+
+    /**
+     * It should allow comamnds not to have any argument or options
+     *
+     * @test
+     */
+    public function should_allow_comamnds_not_to_have_any_argument_or_options()
+    {
+        $command = new Command('report', []);
     }
 }

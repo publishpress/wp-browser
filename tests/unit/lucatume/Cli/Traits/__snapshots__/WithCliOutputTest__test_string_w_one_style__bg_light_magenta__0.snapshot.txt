@@ -1,0 +1,1 @@
+Normal \e[105mBg_light_magenta\e[0m Normal\e[0m
