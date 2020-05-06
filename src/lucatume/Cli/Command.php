@@ -174,7 +174,7 @@ class Command implements Helper
      * values.
      *
      * @param array<string>|null $input The current command input, or `null` to use the global script `$argv`.
-     * @return Args The parsed arguments.
+     * @return Map The parsed arguments.
      *
      * @throws CliException If the input arguments do not satisfy the command definition.
      */
@@ -267,7 +267,7 @@ class Command implements Helper
             ]
         ]);
 
-        return new Args($map);
+        return new Map($map);
     }
 
     /**

@@ -34,13 +34,6 @@ $args = $app->parseElse(static function ($message) use ($app) {
     exit(0);
 });
 
-exit(0);
-
-if ($args('help', false)) {
-    echo $args('_help');
-    exit(0);
-}
-
 $changelogFile = $root . '/CHANGELOG.md';
 
 if (!in_array($args('type', 'patch'), ['major', 'minor', 'patch'], true)) {

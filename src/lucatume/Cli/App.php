@@ -179,15 +179,38 @@ HELP_TEMPLATE;
     }
 
     /**
-     * Returns whether a command is registered in the application or not.
+     * Parses the application input and returns a parsed argument and option map.
      *
-     * @param string $command The name of the command to check.
+     * @param callable $else The callback to call if there's any issue parsing the input.
+     * @param array|null $args The argument input to parse.
      *
-     * @return bool Whether a command is registered in the application or not.
+     * @return Map The parsed input arguments.
      */
-    protected function hasCommand($command)
+    public function parseElse(callable $else, array $args = null)
     {
-        return array_key_exists($command, $this->commands);
+        if ($args === null) {
+            global $argv;
+            $args = $argv;
+            // Remove the first entry, the app file path.
+            array_shift($args);
+        }
+
+        $commandName = array_shift($args);
+
+        if (null === $commandName) {
+            $else("No command provided.");
+            return new Map(['command' => $commandName]);
+        }
+
+        try {
+            $command = $this->getCommand($commandName);
+            $parsed = $command->parseInput($args);
+            return $parsed->update(['command' => $commandName]);
+        } catch (CliException $e) {
+            $else($e->getMessage());
+        }
+
+        return new Map(['command' => $commandName]);
     }
 
     /**
@@ -209,38 +232,14 @@ HELP_TEMPLATE;
     }
 
     /**
-     * Parses the application input and returns a parsed argument and option map.
+     * Returns whether a command is registered in the application or not.
      *
-     * @param callable $else The callback to call if there's any issue parsing the input.
-     * @param array|null $args The argument input to parse.
+     * @param string $command The name of the command to check.
      *
-     * @return Args The parsed input arguments.
+     * @return bool Whether a command is registered in the application or not.
      */
-    public function parseElse(callable $else, array $args = null)
+    protected function hasCommand($command)
     {
-        if ($args === null) {
-            global $argv;
-            $args = $argv;
-            // Remove the first entry, the app file path.
-            array_shift($args);
-        }
-
-        $commandName = array_shift($args);
-
-        if (null === $commandName) {
-            $else("No command provided.");
-            return new Args(['command' => $commandName]);
-        }
-
-        try {
-            $command = $this->getCommand($commandName);
-            $parsed = $command->parseInput($args);
-            $parsed['command'] = $commandName;
-            return $parsed;
-        } catch (CliException $e) {
-            $else($e->getMessage());
-        }
-
-        return new Args(['command' => $commandName]);
+        return array_key_exists($command, $this->commands);
     }
 }

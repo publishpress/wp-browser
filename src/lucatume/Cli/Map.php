@@ -1,6 +1,6 @@
 <?php
 /**
- * Models a map that contains a command parsed input arguments and options.
+ * Models a map.
  *
  * @package lucatume\Cli
  */
@@ -8,11 +8,11 @@
 namespace lucatume\Cli;
 
 /**
- * Class Args
+ * Class Map
  *
  * @package lucatume\Cli
  */
-class Args implements \ArrayAccess
+class Map implements \ArrayAccess
 {
     /**
      * The parsed arguments and options map.
@@ -20,15 +20,19 @@ class Args implements \ArrayAccess
      * @var array<string,mixed>
      */
     protected $map = [];
+
     /**
      * A map relating aliases to their source keys.
+     *
      * @var array<string,string>
      */
     protected $aliases = [];
 
     /**
      * Args constructor.
-     * @param array $map
+     *
+     * @param array<string,mixed> $map A map of data to hydrate the map with.
+     * @param array<string,string> $aliases A map of aliases mapping aliases to their sources.
      */
     public function __construct(array $map = [], array $aliases = [])
     {
@@ -66,8 +70,29 @@ class Args implements \ArrayAccess
      */
     public function offsetSet($offset, $value)
     {
-        $offset = $this->redirectAlias($offset);
-        return $this->map[$offset] = $value;
+        throw new \RuntimeException(
+            'The map is immutable, use the update method to get an updated version of the Map.'
+        );
+    }
+
+    /**
+     * Returns a new instance of the map, modeling the updates.
+     *
+     * @param array<string,mixed> $updates The map updates.
+     *
+     * @return Map A new map, updated.
+     */
+    public function update(array $updates)
+    {
+        if (count(array_filter(array_keys($updates), 'is_string')) !== count($updates)) {
+            throw new \InvalidArgumentException('Map updates must be provided with an associative array.');
+        }
+        foreach ($updates as $key => $value) {
+            $offset = $this->redirectAlias($key);
+            $alterations[$offset] = $value;
+        }
+
+        return new static(array_merge($this->map, $alterations), $this->aliases);
     }
 
     /**
