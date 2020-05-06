@@ -17,7 +17,7 @@ require_once $root . '/vendor/autoload.php';
 $app = new App('package', '1.0.0');
 $app->addCommand(new Command(
     'release',
-    'Releases a new version of the package, requires git and github CLI tools.',
+    'Releases a new version of the package, requires git and hub CLI tools.',
     [
         'type' => 'The release type, one of major, minor or patch.',
         '[-d|--dry-run]' => 'Run the script in dry-run mode, without actually modifying anything.',
@@ -28,7 +28,12 @@ $app->addCommand(new Command(
     ]
 ));
 
-$app->help();
+$args = $app->parseElse(static function ($message) use ($app) {
+    echo $message . "\n";
+    $app->printHelp();
+    exit(0);
+});
+
 exit(0);
 
 if ($args('help', false)) {

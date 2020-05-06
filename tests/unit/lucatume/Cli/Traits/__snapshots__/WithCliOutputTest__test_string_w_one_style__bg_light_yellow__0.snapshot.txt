@@ -1,1 +1,1 @@
-Normal \e103mBg_light_yellow\e[0m Normal\e[0m
+Normal \033[103mBg_light_yellow\033[0m Normal\033[0m

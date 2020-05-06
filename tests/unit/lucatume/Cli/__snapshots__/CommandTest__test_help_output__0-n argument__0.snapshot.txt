@@ -1,11 +1,13 @@
 
 test
 
-Signature: [32mtest [test]* [--help][0m
+Signature: \033[32mtest [test]* [--help]\033[0m
 
 Arguments:
-  [32mtest[0m       (optional, 0-n values) _help_
+
+  \033[32mtest                      \033[0m(optional, 0-n values) _help_
   
 Options:
-  [32m--help[0m     Display this help text
-  
+
+  \033[32m--help                    \033[0mDisplay the command help text
+  \033[0m

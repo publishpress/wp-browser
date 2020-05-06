@@ -1,1 +1,1 @@
-Normal \e[34mBlue\e[0m Normal\e[0m
+Normal \033[34mBlue\033[0m Normal\033[0m

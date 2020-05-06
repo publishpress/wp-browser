@@ -15,7 +15,7 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        new Command('test', ['foo', '[bar]', '[--baz]']);
+        new Command('test', 'Test', ['foo', '[bar]', '[--baz]']);
     }
 
     public function commandCreationDataProvider()
@@ -71,7 +71,7 @@ class CommandTest extends \Codeception\Test\Unit
      */
     public function test_command_creation($input, $definition, array $expectedArgs, array $expectedOptions)
     {
-        $command = new Command('test', $definition);
+        $command = new Command('test', 'Test', $definition);
         $args = $command->parseInput($input);
         $parsed = $args('_parsed');
         $this->assertEquals($expectedArgs, $parsed['args']);
@@ -85,7 +85,7 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        $command = new Command('test', ['command' => '_help_', 'suite' => '_help_']);
+        $command = new Command('test', 'Test', ['command' => '_help_', 'suite' => '_help_']);
         $command->parseInput(['foo']);
     }
 
@@ -96,7 +96,7 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        $command = new Command('test', ['command' => '_help_', 'suite*' => '_help_']);
+        $command = new Command('test', 'Test', ['command' => '_help_', 'suite*' => '_help_']);
         $command->parseInput(['foo']);
     }
 
@@ -105,7 +105,7 @@ class CommandTest extends \Codeception\Test\Unit
      */
     public function test_args_does_not_throw_if_arg_with_0_n_arguments_is_missing()
     {
-        $command = new Command('test', ['command' => '_help_', '[suite]*' => '_help_']);
+        $command = new Command('test', 'Test', ['command' => '_help_', '[suite]*' => '_help_']);
         $command->parseInput(['foo']);
     }
 
@@ -114,7 +114,7 @@ class CommandTest extends \Codeception\Test\Unit
      */
     public function test_args_does_not_throw_if_optional_argument_is_missing()
     {
-        $command = new Command('test', ['command' => '_help_', '[suite]' => '_help_']);
+        $command = new Command('test', 'Test', ['command' => '_help_', '[suite]' => '_help_']);
         $command->parseInput(['foo']);
     }
 
@@ -125,7 +125,7 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        $command = new Command('greet', ['name' => '_help_', '[--yell]' => '_help_']);
+        $command = new Command('greet', 'Test', ['name' => '_help_', '[--yell]' => '_help_']);
         $command->parseInput(['luca', '--yell=yes']);
     }
 
@@ -136,7 +136,7 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        $command = new Command('test', ['command' => '_help_', '[--iterations=]' => '_help_']);
+        $command = new Command('test', 'Test', ['command' => '_help_', '[--iterations=]' => '_help_']);
         $command->parseInput(['compute', '--iterations']);
     }
 
@@ -147,7 +147,7 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        $command = new Command('test', ['command' => '_help_', '[-i|--iterations=]' => '_help_']);
+        $command = new Command('test', 'Test', ['command' => '_help_', '[-i|--iterations=]' => '_help_']);
         $command->parseInput(['compute', '-i']);
     }
 
@@ -179,9 +179,9 @@ class CommandTest extends \Codeception\Test\Unit
      */
     public function test_help_output($definition)
     {
-        $command = new Command('test', $definition);
+        $command = new Command('test', 'Test', $definition);
 
-        $this->assertMatchesStringSnapshot($command->help());
+        $this->assertMatchesStringSnapshot($command->getHelp());
     }
 
     public function badDefinitionFormatProvider()
@@ -205,7 +205,7 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        new Command('test', $badDefinitionFormat);
+        new Command('test', 'Test', $badDefinitionFormat);
     }
 
     /**
@@ -217,7 +217,7 @@ class CommandTest extends \Codeception\Test\Unit
     {
         $this->expectException(CliException::class);
 
-        new Command('test', ['name*'=>'_help_','lastname*' => '_help_']);
+        new Command('test', 'Test', ['name*'=>'_help_','lastname*' => '_help_']);
     }
 
     /**
@@ -227,7 +227,7 @@ class CommandTest extends \Codeception\Test\Unit
      */
     public function should_allow_getting_the_command_name()
     {
-        $command = new Command('greet', ['name'=>'_help_']);
+        $command = new Command('greet', 'Test', ['name'=>'_help_']);
 
         $this->assertEquals('greet', $command->getName());
     }
@@ -239,6 +239,6 @@ class CommandTest extends \Codeception\Test\Unit
      */
     public function should_allow_comamnds_not_to_have_any_argument_or_options()
     {
-        $command = new Command('report', []);
+        $command = new Command('report', 'Report', []);
     }
 }

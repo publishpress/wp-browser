@@ -7,12 +7,14 @@
 
 namespace lucatume\Cli;
 
+use lucatume\Cli\Interfaces\Helper;
+
 /**
  * Class Command
  *
  * @package lucatume\Cli
  */
-class Command
+class Command implements Helper
 {
     use Traits\WithCliOutput;
 
@@ -67,6 +69,11 @@ class Command
             throw CliException::becauseEachDefinitionEntryShouldBeAMapElement();
         }
         $this->name = $name;
+
+        if (!is_string($description)) {
+            throw CliException::becauseArgumentShouldBeType('description', 'string');
+        }
+
         $this->description = $description;
 
         if (!isset($definition['[--help]'])) {
@@ -253,7 +260,7 @@ class Command
         }
 
         $map = array_merge($parsedArgs, $parsedOptions, [
-            '_help' => $this->help($this->name, $this->definition, $help),
+            '_help' => $this->getHelp($this->name, $this->definition, $help),
             '_parsed' => [
                 'options' => $parsedOptions,
                 'args' => $parsedArgs
@@ -264,11 +271,9 @@ class Command
     }
 
     /**
-     * Returns the command help text.
-     *
-     * @return string The command help text.
+     * {@inheritDoc}
      */
-    public function help()
+    public function getHelp()
     {
         $template = <<< HELP
 
@@ -311,7 +316,7 @@ HELP;
             $optionsList
         );
 
-        return $output . PHP_EOL;
+        return $this->style($output) . PHP_EOL;
     }
 
     /**
@@ -375,5 +380,13 @@ HELP;
     public function getDescription()
     {
         return $this->description;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function printHelp()
+    {
+        $this->output($this->getHelp());
     }
 }

@@ -1,1 +1,1 @@
-Normal \e30mBlack\e[0m Normal\e[0m
+Normal \033[30mBlack\033[0m Normal\033[0m

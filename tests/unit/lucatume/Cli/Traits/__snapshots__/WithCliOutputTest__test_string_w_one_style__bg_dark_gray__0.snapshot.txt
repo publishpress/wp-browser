@@ -1,1 +1,1 @@
-Normal \e[100mBg_dark_gray\e[0m Normal\e[0m
+Normal \033[100mBg_dark_gray\033[0m Normal\033[0m

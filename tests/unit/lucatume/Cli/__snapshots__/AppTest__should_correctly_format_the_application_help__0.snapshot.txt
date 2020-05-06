@@ -1,0 +1,7 @@
+
+\033[94mtest\033[0m - \033[1mversion\033[0m\033[94m 1.0.0
+
+Commands:
+
+\033[32mhelp                      \033[0mDisplays the application help text.\033[0m
+\033[32mgreet                     \033[0mGreet\033[0m

@@ -1,1 +1,1 @@
-Normal \e[32mgreen \e[33myellow\e[0m\e[32m green\e[0m normal\e[0m
+Normal \033[32mgreen \033[33myellow\033[0m\033[32m green\033[0m normal\033[0m

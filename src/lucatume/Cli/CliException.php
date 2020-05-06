@@ -106,4 +106,31 @@ class CliException extends \Exception
     {
         return new static("The {$style} style is not a supported one.");
     }
+
+    /**
+     * An exception caused by an argument not being of the expected type.
+     *
+     * @param string $argName The name of the argument that should be a string.
+     * @param string|array<string> $type The argument expected type or types.
+     *
+     * @return static The built exception instance.
+     */
+    public static function becauseArgumentShouldBeType($argName, $type)
+    {
+        $types = implode(', ', (array)$type);
+        return new static("The {$argName} argument should be of type {$types}.");
+    }
+
+    /**
+     * An exception caused by the user trying to run a command that is not defined in an application.
+     *
+     * @param string $appName The application name.
+     * @param string $command The name of the non-existing command.
+     *
+     * @return static The built exception instance.
+     */
+    public static function becauseTheCommandIsNotDefined($appName, $command)
+    {
+        return new static("The {$appName} application does not have a {$command} command.");
+    }
 }

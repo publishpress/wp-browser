@@ -1,1 +1,1 @@
-Normal \e[97mWhite\e[0m Normal\e[0m
+Normal \033[97mWhite\033[0m Normal\033[0m
