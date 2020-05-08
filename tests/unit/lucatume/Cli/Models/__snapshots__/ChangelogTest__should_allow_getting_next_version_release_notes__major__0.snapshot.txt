@@ -1,0 +1,11 @@
+3.0.0
+
+### Added
+
+- some unreleased feature
+- another unreleased feature
+
+### Fixed
+
+- an issue
+- a second issue

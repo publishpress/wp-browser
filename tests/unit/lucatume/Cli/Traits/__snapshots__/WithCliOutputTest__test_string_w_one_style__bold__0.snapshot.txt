@@ -1,1 +1,1 @@
-Normal \033[1mBold\033[0m Normal\033[0m
+Normal [1mBold[0m Normal[0m

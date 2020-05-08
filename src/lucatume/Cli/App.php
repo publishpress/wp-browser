@@ -17,8 +17,8 @@ use lucatume\Cli\Interfaces\Helper;
 class App implements Helper
 {
     use Traits\WithCliOutput;
-
-    const OUTPUT_DEFAULT = 'default';
+    use Traits\WithCliInput;
+    use Traits\WithProcesses;
 
     /**
      * The application name.
@@ -54,12 +54,6 @@ class App implements Helper
      * @var Command
      */
     protected $helpCommand;
-    /**
-     * The application input, defaults to STDIN if not provided.
-     *
-     * @var callable
-     */
-    protected $inputProvider;
 
     /**
      * App constructor.
@@ -148,7 +142,7 @@ class App implements Helper
     {
         $help = <<< HELP_TEMPLATE
 
-<light_blue>%s</light_blue> - <bold>version</bold> %s
+<blue>%s</blue> - version <bold>%s</bold>
 
 Commands:
 

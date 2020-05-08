@@ -1,1 +1,1 @@
-Normal \033[32mGreen\033[0m Normal\033[0m
+Normal [32mGreen[0m Normal[0m

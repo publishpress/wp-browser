@@ -1,1 +1,1 @@
-normal \e[5;43mwarning\033[0m normal\033[0m
+normal [\e[5;43mmwarning[0m normal[0m

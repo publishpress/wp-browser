@@ -1,0 +1,47 @@
+# Change Log
+All notable changes after version 1.6.16 to this project will be documented in this file.
+This project adheres to [Semantic Versioning](http://semver.org/).
+
+## [unreleased] Unreleased
+
+## [2.4.9] 2019-01-01;
+
+### Added
+
+- some unreleased feature
+- another unreleased feature
+
+### Fixed
+
+- an issue
+- a second issue
+
+## [2.4.8] 2020-05-01;
+
+### Fixed
+
+- initialization environment vars in the `Wpbrowser` template providing functions for the `codecept init wpbrowser` command
+
+## [2.4.7] 2020-04-23;
+
+### Fixed
+
+- support for Unix sockets in `WPDB` and `WPLoader` modules
+
+### Changed
+
+- the `codecept init wpbrowser` will now scaffold the suites to support both classic MySQL hosts like `1.2.3.4:3306`, container-type hosts like `db` and Unix socket hosts like `localhost:/var/mysql.sock`
+
+[1.0.0] 2020-01-01;
+
+## Added
+
+- Initial release
+
+[Unreleased]: https://github.com/acme/test-project/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/acme/test-project/compare/v0.3.0...v1.0.0
+[2.4.6]: https://github.com/acme/test-project/compare/2.4.5...2.4.6
+[2.4.7]: https://github.com/acme/test-project/compare/2.4.6...2.4.7
+[2.4.8]: https://github.com/acme/test-project/compare/2.4.7...2.4.8
+[2.4.9]: https://github.com/acme/test-project/compare/2.4.8...2.4.9
+[unreleased]: https://github.com/acme/test-project/compare/2.4.9...HEAD

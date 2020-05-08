@@ -174,6 +174,7 @@ class Command implements Helper
      * values.
      *
      * @param array<string>|null $input The current command input, or `null` to use the global script `$argv`.
+     *
      * @return Map The parsed arguments.
      *
      * @throws CliException If the input arguments do not satisfy the command definition.
@@ -199,16 +200,42 @@ class Command implements Helper
             return $options;
         }, []);
 
-        $parsedOptions = [];
+        // Prime the options setting any flag option to `false`.
+        $parsedOptions = array_reduce($options,static function(array $acc, array $option){
+            if (!empty($option['flag'])) {
+                // Prime flag options to `false`.
+                foreach (['short', 'long'] as $version) {
+                    if (isset($option[$version])) {
+                        $acc[$option[$version]] = false;
+                    }
+                }
+            }
+
+            if(!empty($option['multi'])){
+                // Prime multi options to empty arrays.
+                foreach (['short', 'long'] as $version) {
+                    if (isset($option[$version])) {
+                        $acc[$option[$version]] = [];
+                    }
+                }
+            }
+
+            return $acc;
+        }, []);
+
         $parsedArgs = [];
         $argsIndex = 0;
+
         for ($i = 0; $i < $argsCount; $i++) {
             if (preg_match('/^(--(?<long>[^=]+)|-(?<short>[^=]+))(=(?<value>.*))*$/usm', $input[$i], $match)) {
+                // Parse an option.
                 $option = !empty($match['short']) ? $match['short'] : $match['long'];
                 $altName = !empty($match['short']) ? $options[$option]['long'] : $options[$option]['short'];
                 $multi = !empty($options[$option]['multi']);
 
-                if ($options[$option]['flag'] === false && !isset($match['value'])) {
+                $isFlag = $options[$option]['flag'] === true;
+
+                if (!$isFlag && !isset($match['value'])) {
                     throw CliException::becauseOptionRequiresValue($option);
                 }
 
@@ -223,18 +250,20 @@ class Command implements Helper
                 if (!empty($altName)) {
                     $parsedOptions[$altName] = $optionValue;
                 }
+                continue;
+            }
+
+            // Parse an argument.
+            $argName = $args[$argsIndex]['name'];
+            if (empty($args[$argsIndex]['multi'])) {
+                // Move to the next argument only if this argument does not support multiple values.
+                $argsIndex++;
+                $parsedArgs[$argName] = $input[$i];
             } else {
-                $argName = $args[$argsIndex]['name'];
-                if (empty($args[$argsIndex]['multi'])) {
-                    // Move to the next argument only if this argument does not support multiple values.
-                    $argsIndex++;
-                    $parsedArgs[$argName] = $input[$i];
-                } else {
-                    if (empty($parsedArgs[$argName])) {
-                        $parsedArgs[$argName] = [];
-                    }
-                    $parsedArgs[$argName][] = $input[$i];
+                if (empty($parsedArgs[$argName])) {
+                    $parsedArgs[$argName] = [];
                 }
+                $parsedArgs[$argName][] = $input[$i];
             }
         }
 

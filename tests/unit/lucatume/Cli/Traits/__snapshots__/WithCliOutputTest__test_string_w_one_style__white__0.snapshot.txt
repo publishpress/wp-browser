@@ -1,1 +1,1 @@
-Normal \033[97mWhite\033[0m Normal\033[0m
+Normal [97mWhite[0m Normal[0m

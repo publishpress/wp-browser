@@ -1,1 +1,1 @@
-Normal \033[90mDark_gray\033[0m Normal\033[0m
+Normal [90mDark_gray[0m Normal[0m

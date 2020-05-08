@@ -1,1 +1,1 @@
-Normal \033[47mBg_light_gray\033[0m Normal\033[0m
+Normal [47mBg_light_gray[0m Normal[0m

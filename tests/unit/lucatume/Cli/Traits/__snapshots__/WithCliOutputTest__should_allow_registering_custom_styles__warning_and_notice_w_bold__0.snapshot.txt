@@ -1,1 +1,1 @@
-normal \e[5;43m warning \e[31;2;43mwarning and notice \033[1mbold\033[0m\e[5;43m\e[31;2;43m\033[0m\e[5;43m notice\033[0m normal\033[0m
+normal [\e[5;43mm warning [\e[31;2;43mmwarning and notice [1mbold[0m[\e[5;43mm[\e[31;2;43mm[0m[\e[5;43mm notice[0m normal[0m

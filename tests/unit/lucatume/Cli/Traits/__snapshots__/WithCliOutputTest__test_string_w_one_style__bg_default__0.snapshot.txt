@@ -1,1 +1,1 @@
-Normal \033[49mBg_default\033[0m Normal\033[0m
+Normal [49mBg_default[0m Normal[0m

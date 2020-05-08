@@ -1,1 +1,1 @@
-Normal \033[43mBg_yellow\033[0m Normal\033[0m
+Normal [43mBg_yellow[0m Normal[0m

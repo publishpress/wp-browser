@@ -22,31 +22,31 @@ class CommandTest extends \Codeception\Test\Unit
     {
         return [
             // $input, $definition, array $expectedArgs, array $expectedOptions)
-            'one req. arg' => [['luca'], ['name' => '_help_'], ['name' => 'luca'], []],
-            'greet name [--yell]' => [['luca', '--yell'], ['name' => '_help_', '[--yell]' => '_help_'], ['name' => 'luca'], ['yell' => true]],
+            'one req. arg' => [['luca'], ['name' => '_help_'], ['name' => 'luca'], ['help' => false]],
+            'greet name [--yell]' => [['luca', '--yell'], ['name' => '_help_', '[--yell]' => '_help_'], ['name' => 'luca'], ['help' => false,'yell' => true]],
             'test operation [-f|--file=] [-d|--dry-run]' => [
                 ['delete', '--file=/var/mysql.sock', '-d'],
                 ['operation' => '_help_', '[-f|--file=]' => '_help_', '[-d|--dry-run]' => '_help_'],
                 ['operation' => 'delete'],
-                ['file' => '/var/mysql.sock', 'f' => '/var/mysql.sock', 'dry-run' => true, 'd' => true]
+                ['help' => false,'file' => '/var/mysql.sock', 'f' => '/var/mysql.sock', 'dry-run' => true, 'd' => true]
             ],
             'test command [-c|--config=]*' => [
                 ['run', '-c=foo.bar', '--config=lorem.dolor'],
                 ['command' => '_help_', '[-c|--config=]*' => '_help_'],
                 ['command' => 'run'],
-                ['c' => ['foo.bar', 'lorem.dolor'], 'config' => ['foo.bar', 'lorem.dolor']]
+                ['help' => false,'c' => ['foo.bar', 'lorem.dolor'], 'config' => ['foo.bar', 'lorem.dolor']]
             ],
             'release [version] [-d|--dry-run]' => [
                 ['23.89'],
                 ['[version]' => '_help_', '[-d|--dry-run]' => '_help_'],
                 ['version' => '23.89'],
-                []
+                ['help' => false, 'd' => false, 'dry-run' => false]
             ],
             'greet [name]*' => [
                 ['alice', 'bob'],
                 ['[name]*' => '_help_'],
                 ['name' => ['alice', 'bob']],
-                []
+                ['help' => false]
             ],
             'test command [target]* [-c|--config=]* [-d|--dry-run]' => [
                 ['clean', 'foo', 'bar', '-c=one.conf', '--config=two.conf', '--dry-run'],
@@ -56,6 +56,7 @@ class CommandTest extends \Codeception\Test\Unit
                     'target' => ['foo', 'bar']
                 ],
                 [
+                    'help' => false,
                     'c' => ['one.conf', 'two.conf'],
                     'config' => ['one.conf', 'two.conf'],
                     'dry-run' => true,
@@ -240,5 +241,28 @@ class CommandTest extends \Codeception\Test\Unit
     public function should_allow_comamnds_not_to_have_any_argument_or_options()
     {
         $command = new Command('report', 'Report', []);
+    }
+
+    /**
+     * It should allow getting an option by both short and long name
+     *
+     * @test
+     */
+    public function should_allow_getting_an_option_by_both_short_and_long_name()
+    {
+        $command = new Command('report', 'Report', [
+            '[-f|--file=]' => '_description_',
+            '[-q|--quiet]' => '_description_',
+            '[-x|--execute]' => '_description_',
+        ]);
+
+        $parsed = $command->parseInput(['-f=foo.txt','--quiet' ]);
+
+        $this->assertEquals('foo.txt', $parsed('file'));
+        $this->assertEquals('foo.txt', $parsed('f'));
+        $this->assertTrue($parsed('q'));
+        $this->assertTrue($parsed('quiet'));
+        $this->assertFalse($parsed('x'));
+        $this->assertFalse($parsed('execute'));
     }
 }

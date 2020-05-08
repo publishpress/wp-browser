@@ -1,0 +1,37 @@
+Changelog updates:
+
+---
+# Change Log
+All notable changes after version 1.6.16 to this project will be documented in this file.
+This project adheres to [Semantic Versioning](http://semver.org/).
+
+## [unreleased] Unreleased
+
+## [2.5.0] 2019-01-01;
+
+### Added
+
+- some unreleased feature
+- another unreleased feature
+
+### Fixed
+
+- an issue
+- a second issue
+
+## [2.4.8] 2020-05-01;
+
+### Fixed
+
+- initialization environment vars in the `Wpbrowser` template providing functions for the `codecept init wpbrowser` command
+
+## [2.4.7] 2020-04-23;
+
+[...]
+
+hub.com/acme/test-project/compare/2.4.6...2.4.7
+[2.4.8]: https://github.com/acme/test-project/compare/2.4.7...2.4.8
+[2.5.0]: https://github.com/acme/test-project/compare/2.4.8...2.5.0
+[unreleased]: https://github.com/acme/test-project/compare/2.5.0...HEAD
+
+---

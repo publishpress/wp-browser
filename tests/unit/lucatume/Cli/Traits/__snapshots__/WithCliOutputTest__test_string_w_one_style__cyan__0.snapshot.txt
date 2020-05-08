@@ -1,1 +1,1 @@
-Normal \033[36mCyan\033[0m Normal\033[0m
+Normal [36mCyan[0m Normal[0m

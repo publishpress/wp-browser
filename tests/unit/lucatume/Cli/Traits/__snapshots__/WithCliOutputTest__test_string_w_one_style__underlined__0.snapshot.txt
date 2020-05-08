@@ -1,1 +1,1 @@
-Normal \033[4mUnderlined\033[0m Normal\033[0m
+Normal [4mUnderlined[0m Normal[0m

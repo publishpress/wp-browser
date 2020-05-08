@@ -1,1 +1,1 @@
-normal \e[31;2;43mnotice\033[0m normal\033[0m
+normal [\e[31;2;43mmnotice[0m normal[0m

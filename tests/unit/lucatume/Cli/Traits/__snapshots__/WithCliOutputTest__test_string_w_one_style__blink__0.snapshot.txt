@@ -1,1 +1,1 @@
-Normal \033[5mBlink\033[0m Normal\033[0m
+Normal [5mBlink[0m Normal[0m

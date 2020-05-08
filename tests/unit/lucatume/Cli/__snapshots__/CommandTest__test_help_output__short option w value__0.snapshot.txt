@@ -1,7 +1,7 @@
 
 test
 
-Signature: \033[32mtest [-d=] [--help]\033[0m
+Signature: [32mtest [-d=] [--help][0m
 
 Arguments:
 
@@ -9,6 +9,6 @@ Arguments:
   
 Options:
 
-  \033[32m--help                    \033[0mDisplay the command help text
-  \033[32m-d                        \033[0m(req. value) _help_
-  \033[0m
+  [32m--help                    [0mDisplay the command help text
+  [32m-d                        [0m(req. value) _help_
+  [0m

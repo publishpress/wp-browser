@@ -1,1 +1,1 @@
-Normal \033[7mReverse\033[0m Normal\033[0m
+Normal [7mReverse[0m Normal[0m

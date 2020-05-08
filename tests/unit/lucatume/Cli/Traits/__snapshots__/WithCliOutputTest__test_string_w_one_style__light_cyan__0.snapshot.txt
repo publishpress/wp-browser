@@ -1,1 +1,1 @@
-Normal \033[96mLight_cyan\033[0m Normal\033[0m
+Normal [96mLight_cyan[0m Normal[0m

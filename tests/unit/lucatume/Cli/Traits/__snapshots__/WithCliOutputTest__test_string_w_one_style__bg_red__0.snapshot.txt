@@ -1,1 +1,1 @@
-Normal \033[[41mBg_red\033[0m Normal\033[0m
+Normal [41mBg_red[0m Normal[0m

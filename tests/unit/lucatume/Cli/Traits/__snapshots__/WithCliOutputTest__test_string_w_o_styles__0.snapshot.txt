@@ -1,1 +1,1 @@
-normal text\033[0m
+normal text[0m

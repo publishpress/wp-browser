@@ -1,1 +1,1 @@
-Normal \033[8mHidden\033[0m Normal\033[0m
+Normal [8mHidden[0m Normal[0m

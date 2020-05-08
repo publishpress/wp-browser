@@ -1,1 +1,1 @@
-Normal \033[91mLight_red\033[0m Normal\033[0m
+Normal [91mLight_red[0m Normal[0m

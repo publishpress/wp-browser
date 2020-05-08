@@ -1,1 +1,1 @@
-Normal \033[39mDefault\033[0m Normal\033[0m
+Normal [39mDefault[0m Normal[0m

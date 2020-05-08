@@ -1,1 +1,1 @@
-Normal \033[32mgreen \033[2m\033[33myellow dim\033[0m\033[32m\033[2m green dim\033[0m\033[32m green\033[0m normal\033[0m
+Normal [32mgreen [2m[33myellow dim[0m[32m[2m green dim[0m[32m green[0m normal[0m

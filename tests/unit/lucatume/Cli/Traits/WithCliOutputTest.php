@@ -40,7 +40,8 @@ class WithCliOutputTest extends \Codeception\Test\Unit
      */
     public function test_string_with_one_nested_style()
     {
-        $this->assertMatchesStringSnapshot($this->style('Normal <green>green <bold>green and bold</bold> green</green> normal'));
+        $styled = $this->style('Normal <green>green <bold>green and bold</bold> green</green> normal');
+        $this->assertMatchesStringSnapshot($styled);
     }
 
     /**
@@ -48,7 +49,17 @@ class WithCliOutputTest extends \Codeception\Test\Unit
      */
     public function test_with_two_consecutive_color_styles()
     {
-        $this->assertMatchesStringSnapshot($this->style('Normal <green>green <yellow>yellow</yellow> green</green> normal'));
+        $styled = $this->style('Normal <green>green <yellow>yellow</yellow> green</green> normal');
+        $this->assertMatchesStringSnapshot($styled);
+    }
+
+    /**
+     * Test light styles
+     */
+    public function test_light_styles()
+    {
+        $styled = $this->style('<light_blue>light blue</light_blue> - version <bold>1.0.0</bold>');
+        $this->assertMatchesStringSnapshot($styled);
     }
 
     /**
@@ -56,7 +67,8 @@ class WithCliOutputTest extends \Codeception\Test\Unit
      */
     public function test_with_styles_and_dim()
     {
-        $this->assertMatchesStringSnapshot($this->style('Normal <green>green <dim><yellow>yellow dim</yellow> green dim</dim> green</green> normal'));
+        $styled = $this->style('Normal <green>green <dim><yellow>yellow dim</yellow> green dim</dim> green</green> normal');
+        $this->assertMatchesStringSnapshot($styled);
     }
 
     /**
@@ -108,5 +120,21 @@ class WithCliOutputTest extends \Codeception\Test\Unit
         $this->registerStyles($styles);
 
         $this->assertMatchesStringSnapshot($this->style($input));
+    }
+
+    /**
+     * It should allow printing styled output
+     *
+     * @test
+     */
+    public function should_allow_printing_styled_output()
+    {
+        $this->outputHandler = static function ($input) use (&$output) {
+            $output = $input;
+        };
+
+        $this->styledOutput('<magenta>error</magenta> normal <green>green</green>');
+
+        $this->assertMatchesStringSnapshot($output);
     }
 }

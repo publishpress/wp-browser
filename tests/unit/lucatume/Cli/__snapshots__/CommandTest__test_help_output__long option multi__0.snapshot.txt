@@ -1,7 +1,7 @@
 
 test
 
-Signature: \033[32mtest [--dry-run]* [--help]\033[0m
+Signature: [32mtest [--dry-run]* [--help][0m
 
 Arguments:
 
@@ -9,6 +9,6 @@ Arguments:
   
 Options:
 
-  \033[32m--dry-run                 \033[0m(0-n) _help_
-  \033[32m--help                    \033[0mDisplay the command help text
-  \033[0m
+  [32m--dry-run                 [0m(0-n) _help_
+  [32m--help                    [0mDisplay the command help text
+  [0m

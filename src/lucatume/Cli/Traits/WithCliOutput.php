@@ -22,53 +22,53 @@ trait WithCliOutput
      * @var array<string,string>
      */
     protected static $stylesMap = [
-        'reset' => '\033[0m',
-        'bold' => '\033[1m',
-        'reset_bold' => '\033[21m',
-        'dim' => '\033[2m',
-        'reset_dim' => '\033[22m',
-        'underlined' => '\033[4m',
-        'reset_underlined' => '\033[24m',
-        'blink' => '\033[5m',
-        'reset_blink' => '\033[25m',
-        'reverse' => '\033[7m',
-        'reset_reverse' => '\033[27m',
-        'hidden' => '\033[8m',
-        'reset_hidden' => '\033[28m',
-        'default' => '\033[39m',
-        'black' => '\033[30m',
-        'red' => '\033[31m',
-        'green' => '\033[32m',
-        'yellow' => '\033[33m',
-        'blue' => '\033[34m',
-        'magenta' => '\033[35m',
-        'cyan' => '\033[36m',
-        'light_gray' => '\033[37m',
-        'dark_gray' => '\033[90m',
-        'light_red' => '\033[91m',
-        'light_green' => '\033[92m',
-        'light_yellow' => '\033[93m',
-        'light_blue' => '\033[94m',
-        'light_magenta' => '\033[95m',
-        'light_cyan' => '\033[96m',
-        'white' => '\033[97m',
-        'bg_default' => '\033[49m',
-        'bg_black' => '\033[40m',
-        'bg_red' => '\033[[41m',
-        'bg_green' => '\033[42m',
-        'bg_yellow' => '\033[43m',
-        'bg_blue' => '\033[44m',
-        'bg_magenta' => '\033[45m',
-        'bg_cyan' => '\033[46m',
-        'bg_light_gray' => '\033[47m',
-        'bg_dark_gray' => '\033[100m',
-        'bg_light_red' => '\033[101m',
-        'bg_light_green' => '\033[102m',
-        'bg_light_yellow' => '\033[103m',
-        'bg_light_blue' => '\033[104m',
-        'bg_light_magenta' => '\033[105m',
-        'bg_light_cyan' => '\033[106m',
-        'bg_light_white' => '\033[107m'
+        'reset' => 0,
+        'bold' => 1,
+        'reset_bold' => 21,
+        'dim' => 2,
+        'reset_dim' => 22,
+        'underlined' => 4,
+        'reset_underlined' => 24,
+        'blink' => 5,
+        'reset_blink' => 25,
+        'reverse' => 7,
+        'reset_reverse' => 27,
+        'hidden' => 8,
+        'reset_hidden' => 28,
+        'default' => 39,
+        'black' => 30,
+        'red' => 31,
+        'green' => 32,
+        'yellow' => 33,
+        'blue' => 34,
+        'magenta' => 35,
+        'cyan' => 36,
+        'light_gray' => 37,
+        'dark_gray' => 90,
+        'light_red' => 91,
+        'light_green' => 92,
+        'light_yellow' => 93,
+        'light_blue' => 94,
+        'light_magenta' => 95,
+        'light_cyan' => 96,
+        'white' => 97,
+        'bg_default' => 49,
+        'bg_black' => 40,
+        'bg_red' => 41,
+        'bg_green' => 42,
+        'bg_yellow' => 43,
+        'bg_blue' => 44,
+        'bg_magenta' => 45,
+        'bg_cyan' => 46,
+        'bg_light_gray' => 47,
+        'bg_dark_gray' => 100,
+        'bg_light_red' => 101,
+        'bg_light_green' => 102,
+        'bg_light_yellow' => 103,
+        'bg_light_blue' => 104,
+        'bg_light_magenta' => 105,
+        'bg_light_cyan' => 106,
+        'bg_light_white' => 107
     ];
 
     /**
@@ -122,6 +122,61 @@ trait WithCliOutput
     }
 
     /**
+     * Registers a set of extra styles.
+     *
+     * @param array<string,array> $styles A map of each style to register. The format is the one used by the
+     *                                    `registerStyle` method.
+     *
+     * @see WithCliOutput::registerStyle() for the format to use to define the styles to register.
+     */
+    public function registerStyles(array $styles)
+    {
+        foreach ($styles as $key => $value) {
+            $this->registerStyle($key, $value);
+        }
+    }
+
+    /**
+     * Registers an extra style.
+     *
+     * @param $key
+     * @param array<string> $styles The styles the extra style should apply.
+     */
+    public function registerStyle($key, array $styles)
+    {
+        $styleCodes = array_map(static function ($styleName) {
+            if (!isset(static::$stylesMap[$styleName])) {
+                throw CliException::becauseTheStyleIsNotSupported($styleName);
+            }
+            return preg_replace('#\\\\033\\[(\\d+)m#', '$1', static::$stylesMap[$styleName]);
+        }, $styles);
+
+        $styleString = '\e[' . implode(';', $styleCodes) . 'm';
+        $this->styles[$key] = $styleString;
+    }
+
+    /**
+     * Prints a styled output string.
+     *
+     * @param string $text The styled output string to print.
+     */
+    public function styledOutput($text)
+    {
+        $this->output($this->style($text));
+    }
+
+    /**
+     * Outputs a message.
+     *
+     * @param string $message The message to output.
+     * @param string $type The type of output, one of the `OUTPUT_` constants.
+     */
+    public function output($message, $type = null)
+    {
+        call_user_func($this->outputHandler, $message, $type ?: 'default');
+    }
+
+    /**
      * Styles the output using the styles provided by this trait.
      *
      * @param string $text The text to style.
@@ -143,7 +198,7 @@ trait WithCliOutput
 
             if (empty($close)) {
                 $openStyles[] = $style;
-                return $stylesMap[$style];
+                return "\033[" . $stylesMap[$style] . "m";
             }
 
             if ($style !== end($openStyles)) {
@@ -151,68 +206,24 @@ trait WithCliOutput
             }
 
             if (count($openStyles) === 1) {
+                $openStyles = [];
                 // Close the style only if this is the last style in the stack of open styles.
-                return static::$stylesMap['reset'];
+                return "\033[" . static::$stylesMap['reset'] . "m";
             }
 
             array_pop($openStyles);
             // Close the current style and re-open the other ones.
-            return static::$stylesMap['reset']
+            return "\033[" . static::$stylesMap['reset'] . "m"
                 . implode('', array_map(static function ($style) use ($openStyles, $stylesMap) {
-                        return $stylesMap[$style];
+                    return "\033[" . $stylesMap[$style] . "m";
                 }, $openStyles));
         };
 
         $styled = preg_replace_callback('/<(?<close>\\/)*(?<style>[^>]+?)>/', $replace, $text);
 
-        return preg_match('/' . preg_quote(static::$stylesMap['reset'], '/') . '$/', $styled) ?
+        return preg_match('/' . preg_quote("\033[" . static::$stylesMap['reset'] . "m", '/') . '$/', $styled) ?
             $styled
-            : $styled . static::$stylesMap['reset'];
-    }
-
-    /**
-     * Outputs a message.
-     *
-     * @param string $message The message to output.
-     * @param string $type The type of output, one of the `OUTPUT_` constants.
-     */
-    protected function output($message, $type = null)
-    {
-        call_user_func($this->outputHandler, $message, $type ?: static::OUTPUT_DEFAULT);
-    }
-
-    /**
-     * Registers an extra style.
-     *
-     * @param $key
-     * @param array<string> $styles The styles the extra style should apply.
-     */
-    public function registerStyle($key, array $styles)
-    {
-        $styleCodes = array_map(static function ($styleName) {
-            if (!isset(static::$stylesMap[$styleName])) {
-                throw CliException::becauseTheStyleIsNotSupported($styleName);
-            }
-            return preg_replace('#\\\\033\\[(\\d+)m#', '$1', static::$stylesMap[$styleName]);
-        }, $styles);
-
-        $styleString = '\e[' . implode(';', $styleCodes) . 'm';
-        $this->styles[$key]  = $styleString;
-    }
-
-    /**
-     * Registers a set of extra styles.
-     *
-     * @param array<string,array> $styles A map of each style to register. The format is the one used by the
-     *                                    `registerStyle` method.
-     *
-     * @see WithCliOutput::registerStyle() for the format to use to define the styles to register.
-     */
-    public function registerStyles(array $styles)
-    {
-        foreach ($styles as $key => $value) {
-            $this->registerStyle($key, $value);
-        }
+            : $styled . "\033[" . static::$stylesMap['reset'] . "m";
     }
 
     /**

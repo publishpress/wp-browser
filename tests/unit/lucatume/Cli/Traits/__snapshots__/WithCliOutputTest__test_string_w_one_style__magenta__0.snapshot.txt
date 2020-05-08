@@ -1,1 +1,1 @@
-Normal \033[35mMagenta\033[0m Normal\033[0m
+Normal [35mMagenta[0m Normal[0m
