@@ -1,5 +1,5 @@
 {
-  "name": "lucatume/wp-browser",
+  "name": "publishpress/wp-browser",
   "type": "library",
   "description": "WordPress extension of the PhpBrowser class.",
   "keywords": [
